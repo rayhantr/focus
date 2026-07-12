@@ -1,0 +1,28 @@
+html, body, #app {
+  height: 100%;
+  cursor: none;
+}
+#app {
+  background: radial-gradient(ellipse at 50% 35%, #10241a 0%, #060d09 70%);
+  display: grid;
+  place-items: center;
+  user-select: none;
+}
+.card { text-align: center; max-width: 720px; padding: 24px; }
+.kicker {
+  font-size: 15px;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 18px;
+}
+h1 { font-size: 64px; font-weight: 800; margin-bottom: 10px; }
+.sub { font-size: 18px; color: var(--dim); margin-bottom: 42px; }
+.count {
+  font-size: 40px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-2);
+  margin-bottom: 48px;
+}
+.reminder { font-size: 15px; color: var(--dim); font-style: italic; line-height: 1.6; }

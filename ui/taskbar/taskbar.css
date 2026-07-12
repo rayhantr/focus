@@ -1,0 +1,45 @@
+/* Sits over the Windows 11 taskbar as an owned Shell_TrayWnd window. The
+   background is fully transparent so the real taskbar (Mica) shows through and
+   the cell blends seamlessly — no fixed color to mismatch the taskbar's tone.
+   The laufey/CEF window composites the transparent pixels against whatever is
+   behind (the taskbar), so only the text renders. Square, borderless, two
+   right-aligned lines like the system clock.
+
+   Unlike the rest of the app (Anek Bangla), the cell uses the Windows system
+   font so it reads as native taskbar text — the same face the clock renders in.
+   Nirmala UI covers Bangla for bn mode. */
+html, body {
+  background: transparent;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Nirmala UI", system-ui, sans-serif;
+}
+#app { height: 100vh; overflow: hidden; }
+#cell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 2px 10px;
+  text-align: right;
+  font-size: 12px; /* same font + size as the Win11 system clock */
+  line-height: 1.25;
+  user-select: none;
+  background: transparent;
+}
+#cell:hover { background: rgba(255, 255, 255, 0.08); }
+.l1 {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.l2 {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#cell.soon .l2 { color: var(--accent-2); }
+#cell.locked .l2 { color: var(--danger); }

@@ -1,0 +1,59 @@
+/* Glass sheet sliding out from behind the taskbar: real OS acrylic
+   blur-behind (enableGlass in src/winchrome.ts) shows the blurred desktop
+   through the window; these translucent layered gradients + CSS blur just
+   add tint and depth on top of it, square edges, no borders — separation
+   comes from tone, not lines. Show/hide is the WHOLE window sliding between
+   hidden (sunk behind the taskbar) and resting position natively (src/
+   winchrome.ts Slide, driven from main.ts via slideWindow) — no CSS opacity
+   fade, the sheet is fully opaque the entire time it moves. The drop shadow
+   (enableShadow) is DWM's own — CSS box-shadow can't bleed outside a
+   borderless window's clipped rect. */
+html { background: rgba(9, 14, 11, 0.5); } /* translucent — guards the load flash without blocking the acrylic blur behind it */
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+  background:
+    radial-gradient(130% 90% at 85% -10%, rgba(53, 196, 113, 0.14), transparent 60%),
+    radial-gradient(120% 100% at -15% 115%, rgba(255, 209, 102, 0.06), transparent 55%),
+    linear-gradient(160deg, rgba(22, 36, 28, 0.55), rgba(10, 17, 12, 0.62));
+  backdrop-filter: blur(28px) saturate(140%);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 6px;
+}
+header .title { font-size: 12px; font-weight: 600; color: var(--dim); flex: 1; letter-spacing: .02em; }
+header button { font-size: 13px; color: var(--dim); padding: 2px 8px; }
+header button:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.hero-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.hero { padding: 8px 16px 6px; }
+.hero .label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; line-height: 1; }
+.hero .value { font-size: 20px; font-weight: 700; }
+.hero .sub { font-size: 12px; color: var(--accent); line-height: 1; }
+.hero.next .sub { color: var(--accent-2); }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 4px; }
+td { padding: 0px 16px; }
+td:last-child { text-align: right; color: var(--dim); }
+tr.past { opacity: .45; }
+tr.current td { color: var(--accent); font-weight: 700; }
+tr.current td:last-child { color: var(--accent); }
+footer {
+  margin-top: auto;
+  padding: 8px 16px 10px;
+  font-size: 11px;
+  color: var(--dim);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+footer .paused { color: var(--accent-2); }

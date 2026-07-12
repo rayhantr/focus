@@ -1,0 +1,35 @@
+{
+  "unstable": ["raw-imports"],
+  "desktop": {
+    "app": {
+      "name": "Prayer Focus",
+      "identifier": "com.rayhan.prayerfocus",
+      "icons": { "windows": "./assets/AppIcon.ico" }
+    },
+    "backend": "cef"
+  },
+  "tasks": {
+    "ui:build": "deno run -A --config ui/deno.json scripts/build-ui.ts",
+    "ui:watch": "deno run -A --config ui/deno.json scripts/build-ui.ts --watch",
+    "dev": "deno task ui:build && deno desktop --hmr --backend cef --exclude-unused-npm --allow-net --allow-env --allow-read --allow-write --allow-run=reg,powershell main.ts",
+    "build": "deno task ui:build && deno desktop --backend cef --exclude-unused-npm --allow-net --allow-env --allow-read --allow-write --allow-run=reg,powershell --output dist/PrayerFocus.msi main.ts",
+    "build:dir": "deno task ui:build && deno desktop --backend cef --exclude-unused-npm --allow-net --allow-env --allow-read --allow-write --allow-run=reg,powershell --output dist/PrayerFocus main.ts",
+    "test": "deno test --allow-read --allow-write --allow-env tests/",
+    "check": "deno task ui:build && deno check main.ts"
+  },
+  "imports": {
+    "adhan": "npm:adhan@^4.4.4",
+    "@std/encoding": "jsr:@std/encoding@^1.0.5",
+    "@std/testing": "jsr:@std/testing@^1.0.9",
+    "@std/assert": "jsr:@std/assert@^1.0.10",
+    "preact": "npm:preact@^10.27.0",
+    "preact/hooks": "npm:preact@^10.27.0/hooks",
+    "preact/jsx-runtime": "npm:preact@^10.27.0/jsx-runtime"
+  },
+  "compilerOptions": {
+    "lib": ["deno.window", "deno.unstable", "dom"],
+    "types": ["./src/desktop.d.ts"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
+  }
+}

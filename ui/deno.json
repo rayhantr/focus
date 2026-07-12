@@ -1,0 +1,15 @@
+{
+  "nodeModulesDir": "auto",
+  "imports": {
+    "preact": "npm:preact@^10.27.0",
+    "preact/hooks": "npm:preact@^10.27.0/hooks",
+    "preact/jsx-runtime": "npm:preact@^10.27.0/jsx-runtime",
+    "vite": "npm:vite@^6.3.5",
+    "vite-plugin-singlefile": "npm:vite-plugin-singlefile@^2.2.0"
+  },
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "deno.ns"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
+  }
+}
