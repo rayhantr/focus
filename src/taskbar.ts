@@ -1,9 +1,14 @@
 /**
  * Locates the Windows taskbar (Shell_TrayWnd) and its notification area
- * (TrayNotifyWnd, the clock/tray corner). Runs in a DPI-unaware PowerShell
- * process, so rects arrive DPI-virtualized — approximately the logical pixels
- * Deno.BrowserWindow uses (same trick as monitors.ts).
+ * (TrayNotifyWnd, the clock/tray corner) via direct Win32 FFI (win32.ts).
+ *
+ * Queried under a DPI-UNAWARE thread context so rects arrive DPI-virtualized —
+ * approximately the logical pixels Deno.BrowserWindow uses — which is the coordinate
+ * space the taskbar-cell BrowserWindow is positioned in. (winchrome.ts's own
+ * re-pinning then happens in physical px; see win32.ts on the two DPI contexts.)
  */
+
+import { ffiOk, findWindow, findWindowEx, getWindowRect, withUnaware } from "./win32.ts";
 
 export interface Rect {
   x: number;
@@ -17,51 +22,23 @@ export interface TaskbarRects {
   tray: Rect;
 }
 
-const SCRIPT = `
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class TB {
-  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowW(string cls, string title);
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowExW(IntPtr parent, IntPtr after, string cls, string title);
-  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
-}
-'@
-$tb = [TB]::FindWindowW('Shell_TrayWnd', $null)
-if ($tb -eq [IntPtr]::Zero) { Write-Output 'null'; exit }
-$r = New-Object TB+RECT
-[TB]::GetWindowRect($tb, [ref]$r) | Out-Null
-$tn = [TB]::FindWindowExW($tb, [IntPtr]::Zero, 'TrayNotifyWnd', $null)
-$rn = $r
-if ($tn -ne [IntPtr]::Zero) {
-  $rn = New-Object TB+RECT
-  [TB]::GetWindowRect($tn, [ref]$rn) | Out-Null
-}
-@{ tb = @($r.L, $r.T, $r.R, $r.B); tn = @($rn.L, $rn.T, $rn.R, $rn.B) } | ConvertTo-Json -Compress
-`;
-
-function toRect(a: number[]): Rect {
-  return { x: a[0], y: a[1], width: a[2] - a[0], height: a[3] - a[1] };
+function toRect(r: { L: number; T: number; R: number; B: number }): Rect {
+  return { x: r.L, y: r.T, width: r.R - r.L, height: r.B - r.T };
 }
 
 /** null when the taskbar can't be located (e.g. explorer not running). */
 export async function getTaskbarRects(): Promise<TaskbarRects | null> {
+  if (!ffiOk) return null;
   try {
-    const cmd = new Deno.Command("powershell", {
-      args: ["-NoProfile", "-NonInteractive", "-Command", SCRIPT],
-      stdout: "piped",
-      stderr: "null",
+    return withUnaware(() => {
+      const tb = findWindow("Shell_TrayWnd", null);
+      if (tb === null) return null;
+      const taskbar = toRect(getWindowRect(tb));
+      const tn = findWindowEx(tb, null, "TrayNotifyWnd", null);
+      const tray = toRect(tn !== null ? getWindowRect(tn) : getWindowRect(tb));
+      if (taskbar.width <= 0 || taskbar.height <= 0) return null;
+      return { taskbar, tray };
     });
-    const { stdout, success } = await cmd.output();
-    if (!success) return null;
-    const text = new TextDecoder().decode(stdout).trim();
-    if (!text || text === "null") return null;
-    const parsed = JSON.parse(text);
-    const taskbar = toRect(parsed.tb);
-    const tray = toRect(parsed.tn);
-    if (taskbar.width <= 0 || taskbar.height <= 0) return null;
-    return { taskbar, tray };
   } catch (e) {
     console.warn("taskbar rect query failed:", e);
     return null;

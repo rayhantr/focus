@@ -54,6 +54,10 @@ export interface Settings {
   };
   bypassApps: string[]; // case-insensitive exe/package substrings
   autostart: boolean;
+  taskbar: {
+    // Which waqt the taskbar cell shows at rest; hovering it reveals the other.
+    primaryView: "next" | "current";
+  };
 }
 
 export type ScheduledEvent =

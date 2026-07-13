@@ -6,11 +6,24 @@ import { rpc } from "../shared/rpc.ts";
 import { fmtDur, fmtTime, type Lang, makeT } from "../shared/format.ts";
 import type { WaqtState } from "../../src/types.ts";
 
+// This cell is a native taskbar widget, not a browsable page — suppress
+// Chromium's default right-click menu (Back/Reload/Inspect) so a right-click
+// reads as native (and can later host our own menu if wanted).
+globalThis.addEventListener("contextmenu", (e) => e.preventDefault());
+
 interface Boot {
   state: WaqtState;
   strings: Record<string, string>;
   lang: Lang;
   leadMs: number;
+  taskbarView: "next" | "current";
+}
+
+/** One stacked face of the cell (two right-aligned lines + an accent tone). */
+interface Face {
+  l1: string;
+  l2: string;
+  tone: "" | "soon" | "locked";
 }
 
 /** Clock-style taskbar cell: two right-aligned lines, like the Windows time/date. */
@@ -59,29 +72,49 @@ function App() {
   }, [now, boot, refresh]);
 
   if (!boot) return null;
-  const { state, strings, lang, leadMs } = boot;
+  const { state, strings, lang, leadMs, taskbarView } = boot;
   const t = makeT(strings, lang);
   const P = (name: string) => t(`prayer.${name}`);
 
-  let line1: string;
-  let line2: string;
-  let cls = "";
-  if (state.locked) {
-    line1 = P(state.locked.prayer);
-    line2 = fmtDur(state.locked.endsAt - now, strings, lang);
-    cls = "locked";
-  } else {
-    line1 = `${P(state.next.name)} ${fmtTime(state.next.at, lang)}`;
-    line2 = t("panel.startsIn", { t: fmtDur(state.next.at - now, strings, lang) });
-    if (state.next.at - now <= leadMs) cls = "soon";
-  }
-
-  return (
-    <button id="cell" class={cls} onClick={() => rpc("togglePanel").catch(() => {})}>
-      <div class="l1">{line1}</div>
-      <div class="l2">{line2}</div>
+  const open = () => rpc("togglePanel").catch(() => {});
+  // `static` (single face) suppresses the hover flip so the lone face never
+  // slides out to leave the cell blank.
+  const cell = (faces: Face[]) => (
+    <button id="cell" class={faces.length > 1 ? "" : "static"} onClick={open}>
+      {faces.map((f, i) => (
+        <div key={i} class={`face ${i === 0 ? "front" : "back"} ${f.tone}`}>
+          <div class="l1">{f.l1}</div>
+          <div class="l2">{f.l2}</div>
+        </div>
+      ))}
     </button>
   );
+
+  // A lock is in force: show only the lock countdown; hovering must not flip it.
+  if (state.locked) {
+    return cell([{
+      l1: P(state.locked.prayer),
+      l2: fmtDur(state.locked.endsAt - now, strings, lang),
+      tone: "locked",
+    }]);
+  }
+
+  const nextFace: Face = {
+    l1: `${P(state.next.name)} ${fmtTime(state.next.at, lang)}`,
+    l2: t("panel.startsIn", { t: fmtDur(state.next.at - now, strings, lang) }),
+    tone: state.next.at - now <= leadMs ? "soon" : "",
+  };
+  const currentFace: Face = state.current
+    ? {
+      l1: P(state.current.name),
+      l2: t("panel.endsIn", { t: fmtDur(state.current.endsAt - now, strings, lang) }),
+      tone: "",
+    }
+    : { l1: t("taskbar.noWaqt"), l2: "", tone: "" };
+
+  // Front is the configured view; hovering slides to the opposite one.
+  const [front, back] = taskbarView === "current" ? [currentFace, nextFace] : [nextFace, currentFace];
+  return cell([front, back]);
 }
 
 render(<App />, document.getElementById("app")!);

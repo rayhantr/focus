@@ -6,6 +6,10 @@ import { rpc } from "../shared/rpc.ts";
 import { fmtDur, fmtTime, type Lang, makeT } from "../shared/format.ts";
 import type { WaqtState } from "../../src/types.ts";
 
+// The panel is a native flyout, not a browsable page — suppress Chromium's
+// default right-click context menu.
+globalThis.addEventListener("contextmenu", (e) => e.preventDefault());
+
 interface Boot {
   state: WaqtState;
   strings: Record<string, string>;
@@ -57,6 +61,29 @@ function App() {
     const { state } = boot;
     if ((state.current && state.current.endsAt <= now) || state.next.at <= now) refresh();
   }, [now, boot, refresh]);
+
+  // Report the natural content height so the backend fits the window to it exactly —
+  // no clipped footer, no empty band — adapting to font metrics and the taller Bangla
+  // layout. footer.bottom is the full content height (a layout position, unaffected by
+  // the window's overflow clip); measured after fonts settle so the metrics are final.
+  useEffect(() => {
+    if (!boot) return;
+    let done = false;
+    const measure = () => {
+      if (done) return;
+      const f = document.querySelector("footer");
+      if (!f) return;
+      const h = Math.ceil(f.getBoundingClientRect().bottom);
+      if (h > 40) {
+        done = true;
+        rpc("setPanelHeight", h).catch(() => {});
+      }
+    };
+    (document.fonts?.ready ?? Promise.resolve()).then(() => requestAnimationFrame(measure));
+    return () => {
+      done = true;
+    };
+  }, [boot]);
 
   if (!boot) return null;
   const { state, strings, lang } = boot;

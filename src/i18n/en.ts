@@ -14,6 +14,8 @@ export const en = {
   "panel.startsIn": "in {t}",
   "panel.noWaqt": "No prayer waqt now",
 
+  "taskbar.noWaqt": "No waqt",
+
   "notify.preTitle": "{prayer} in {min} minutes",
   "notify.preBody": "Prepare for prayer. Wrap up your work.",
   "notify.startTitle": "It is {prayer} time",
@@ -70,6 +72,10 @@ export const en = {
     "If any of these apps is using the microphone when the lock would start, the lock is skipped and you get a warning instead. One name per line (e.g. discord, slack, zoom, teams).",
   "settings.general": "General",
   "settings.autostart": "Start with Windows",
+  "settings.taskbarView": "Taskbar widget shows",
+  "settings.taskbarViewNext": "Next prayer",
+  "settings.taskbarViewCurrent": "Current waqt",
+  "settings.taskbarViewHint": "Hover the taskbar widget to peek at the other.",
   "settings.save": "Save",
   "settings.saved": "Saved ✓",
 

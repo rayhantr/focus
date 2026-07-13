@@ -18,6 +18,7 @@ interface Boot {
 interface Form {
   language: "en" | "bn";
   autostart: boolean;
+  taskbarView: "next" | "current";
   location: Settings["location"];
   calculation: Settings["calculation"];
   leadMinutes: number;
@@ -30,6 +31,7 @@ function toForm(s: Settings): Form {
   return {
     language: s.language,
     autostart: s.autostart,
+    taskbarView: s.taskbar.primaryView,
     location: { ...s.location },
     calculation: { ...s.calculation },
     leadMinutes: s.notify.leadMinutes,
@@ -48,6 +50,7 @@ function toPatch(f: Form, _s: Settings): Partial<Settings> {
   return {
     language: f.language,
     autostart: f.autostart,
+    taskbar: { primaryView: f.taskbarView },
     location: { ...f.location, lat: Number(f.location.lat), lng: Number(f.location.lng) },
     calculation: f.calculation,
     notify: { leadMinutes: Math.max(0, Number(f.leadMinutes) || 0), perPrayer },
@@ -135,6 +138,17 @@ function App() {
           onChange={(e) => patch({ autostart: (e.target as HTMLInputElement).checked })}
         />
       </div>
+      <div class="row">
+        <label>{t("settings.taskbarView")}</label>
+        <select
+          value={form.taskbarView}
+          onChange={(e) => patch({ taskbarView: (e.target as HTMLSelectElement).value as "next" | "current" })}
+        >
+          <option value="next">{t("settings.taskbarViewNext")}</option>
+          <option value="current">{t("settings.taskbarViewCurrent")}</option>
+        </select>
+      </div>
+      <div class="hint">{t("settings.taskbarViewHint")}</div>
       <h2>{t("settings.location")}</h2>
       <div class="row">
         <label>{t("settings.location")}</label>

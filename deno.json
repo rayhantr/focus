@@ -11,9 +11,9 @@
   "tasks": {
     "ui:build": "deno run -A --config ui/deno.json scripts/build-ui.ts",
     "ui:watch": "deno run -A --config ui/deno.json scripts/build-ui.ts --watch",
-    "dev": "deno task ui:build && deno desktop --hmr --backend cef --exclude-unused-npm --allow-net --allow-env --allow-read --allow-write --allow-run=reg,powershell main.ts",
-    "build": "deno task ui:build && deno desktop --backend cef --exclude-unused-npm --allow-net --allow-env --allow-read --allow-write --allow-run=reg,powershell --output dist/PrayerFocus.msi main.ts",
-    "build:dir": "deno task ui:build && deno desktop --backend cef --exclude-unused-npm --allow-net --allow-env --allow-read --allow-write --allow-run=reg,powershell --output dist/PrayerFocus main.ts",
+    "dev": "deno task ui:build && deno desktop --hmr --backend cef --exclude-unused-npm --allow-net --allow-env --allow-read --allow-write --allow-ffi main.ts",
+    "build": "deno task ui:build && deno desktop --backend cef --exclude-unused-npm --allow-net --allow-env --allow-read --allow-write --allow-ffi --output dist/PrayerFocus.msi main.ts",
+    "build:dir": "deno task ui:build && deno desktop --backend cef --exclude-unused-npm --allow-net --allow-env --allow-read --allow-write --allow-ffi --output dist/PrayerFocus main.ts",
     "test": "deno test --allow-read --allow-write --allow-env tests/",
     "check": "deno task ui:build && deno check main.ts"
   },

@@ -16,6 +16,8 @@ export const bn: Record<StringKey, string> = {
   "panel.startsIn": "{t} পরে",
   "panel.noWaqt": "এখন কোনো নামাজের ওয়াক্ত নয়",
 
+  "taskbar.noWaqt": "ওয়াক্ত নেই",
+
   "notify.preTitle": "{min} মিনিট পরে {prayer}",
   "notify.preBody": "নামাজের প্রস্তুতি নিন। কাজ গুছিয়ে ফেলুন।",
   "notify.startTitle": "{prayer}-এর সময় হয়েছে",
@@ -72,6 +74,10 @@ export const bn: Record<StringKey, string> = {
     "লক শুরুর সময় এই অ্যাপগুলোর কোনোটি মাইক্রোফোন ব্যবহার করলে লক হবে না, বদলে সতর্কবার্তা পাবেন। প্রতি লাইনে একটি নাম (যেমন discord, slack, zoom, teams)।",
   "settings.general": "সাধারণ",
   "settings.autostart": "উইন্ডোজের সাথে চালু হবে",
+  "settings.taskbarView": "টাস্কবার উইজেটে দেখাবে",
+  "settings.taskbarViewNext": "পরবর্তী নামাজ",
+  "settings.taskbarViewCurrent": "বর্তমান ওয়াক্ত",
+  "settings.taskbarViewHint": "অন্যটি এক ঝলক দেখতে টাস্কবার উইজেটে হোভার করুন।",
   "settings.save": "সংরক্ষণ করুন",
   "settings.saved": "সংরক্ষিত ✓",
 

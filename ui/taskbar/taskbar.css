@@ -14,8 +14,23 @@ html, body {
 }
 #app { height: 100vh; overflow: hidden; }
 #cell {
+  position: relative;
   width: 100%;
   height: 100%;
+  overflow: hidden; /* clips the off-screen face during the slide */
+  font-size: 12px; /* same font + size as the Win11 system clock */
+  line-height: 1.25;
+  user-select: none;
+  background: transparent;
+}
+#cell:hover { background: rgba(255, 255, 255, 0.08); }
+
+/* Two faces stacked in the same box. The front rests in view; the back waits
+   just below. On hover the pair slides up one cell-height, swapping them —
+   a native, taskbar-clock-like vertical flip between the two waqt views. */
+.face {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -23,12 +38,13 @@ html, body {
   gap: 1px;
   padding: 2px 10px;
   text-align: right;
-  font-size: 12px; /* same font + size as the Win11 system clock */
-  line-height: 1.25;
-  user-select: none;
-  background: transparent;
+  transition: transform 200ms ease, opacity 200ms ease;
 }
-#cell:hover { background: rgba(255, 255, 255, 0.08); }
+.face.front { transform: translateY(0); opacity: 1; }
+.face.back { transform: translateY(100%); opacity: 0; }
+#cell:not(.static):hover .face.front { transform: translateY(-100%); opacity: 0; }
+#cell:not(.static):hover .face.back { transform: translateY(0); opacity: 1; }
+
 .l1 {
   color: var(--text);
   white-space: nowrap;
@@ -41,5 +57,5 @@ html, body {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-#cell.soon .l2 { color: var(--accent-2); }
-#cell.locked .l2 { color: var(--danger); }
+.face.soon .l2 { color: var(--accent-2); }
+.face.locked .l2 { color: var(--danger); }

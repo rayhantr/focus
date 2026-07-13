@@ -3,7 +3,6 @@ spike/
 *.corrupt
 ui/dist/
 node_modules/
-.gstack/
 
 # Stray deno-desktop build output (default --output folder is the app name)
 Prayer Focus/
