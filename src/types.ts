@@ -57,6 +57,10 @@ export interface Settings {
   taskbar: {
     // Which waqt the taskbar cell shows at rest; hovering it reveals the other.
     primaryView: "next" | "current";
+    // Which side of the taskbar the cell sits on. "right" = left of the clock/tray
+    // (default); "left" = left edge of the taskbar (past Start). The panel opens on
+    // the same side and the cell text aligns to that side (LTR when left).
+    position: "left" | "right";
   };
 }
 

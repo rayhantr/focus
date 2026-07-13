@@ -78,6 +78,10 @@ export const bn: Record<StringKey, string> = {
   "settings.taskbarViewNext": "পরবর্তী নামাজ",
   "settings.taskbarViewCurrent": "বর্তমান ওয়াক্ত",
   "settings.taskbarViewHint": "অন্যটি এক ঝলক দেখতে টাস্কবার উইজেটে হোভার করুন।",
+  "settings.taskbarPosition": "টাস্কবার উইজেটের অবস্থান",
+  "settings.taskbarPositionRight": "ডানে (ঘড়ির পাশে)",
+  "settings.taskbarPositionLeft": "বামে (স্টার্টের পাশে)",
+  "settings.taskbarPositionHint": "প্যানেল একই পাশে খুলবে; উইজেটের লেখাও সেই পাশে সাজবে।",
   "settings.save": "সংরক্ষণ করুন",
   "settings.saved": "সংরক্ষিত ✓",
 

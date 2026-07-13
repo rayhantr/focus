@@ -17,6 +17,7 @@ interface Boot {
   lang: Lang;
   leadMs: number;
   taskbarView: "next" | "current";
+  taskbarPos: "left" | "right";
 }
 
 /** One stacked face of the cell (two right-aligned lines + an accent tone). */
@@ -72,15 +73,16 @@ function App() {
   }, [now, boot, refresh]);
 
   if (!boot) return null;
-  const { state, strings, lang, leadMs, taskbarView } = boot;
+  const { state, strings, lang, leadMs, taskbarView, taskbarPos } = boot;
   const t = makeT(strings, lang);
   const P = (name: string) => t(`prayer.${name}`);
 
   const open = () => rpc("togglePanel").catch(() => {});
   // `static` (single face) suppresses the hover flip so the lone face never
-  // slides out to leave the cell blank.
+  // slides out to leave the cell blank. `left` aligns the text LTR when the cell
+  // sits on the taskbar's left side (default is right-aligned, like the clock).
   const cell = (faces: Face[]) => (
-    <button id="cell" class={faces.length > 1 ? "" : "static"} onClick={open}>
+    <button id="cell" class={`${faces.length > 1 ? "" : "static"}${taskbarPos === "left" ? " left" : ""}`} onClick={open}>
       {faces.map((f, i) => (
         <div key={i} class={`face ${i === 0 ? "front" : "back"} ${f.tone}`}>
           <div class="l1">{f.l1}</div>

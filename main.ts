@@ -37,7 +37,14 @@ const PANEL_GLASS = { r: 12, g: 20, b: 16, a: 90 }; // dark green tint, low alph
 const PANEL_SLIDE_MS = 180; // native window-position slide; independent of CEF's paint loop, so it
 const panelSlideDy = () => panelH + PANEL_MARGIN; // still animates when the window is unfocused (CSS transitions don't)
 const TASKBAR_W = 116;
+const CELL_GAP = 4; // logical-px gap between the cell and the taskbar cluster it hugs (matches winchrome attachCore)
+const TASKBAR_LEFT_INSET = 48; // fallback inset when the Start cluster can't be located (overlay path)
 const TASKBAR_TITLE = "Prayer Focus Taskbar";
+/** Logical x of the left-positioned cell's left edge: just left of the centered Start cluster. */
+function leftCellX(rects: { taskbar: { x: number }; clusterLeft: number | null }): number {
+  if (rects.clusterLeft === null) return rects.taskbar.x + TASKBAR_LEFT_INSET;
+  return Math.max(rects.taskbar.x + TASKBAR_LEFT_INSET, rects.clusterLeft - CELL_GAP - TASKBAR_W);
+}
 const TASKBAR_PLACE_MS = 60_000; // re-anchor/re-embed (tray width changes, explorer restarts)
 const TRAY_INFO_MS = 15_000; // tooltip countdown has minute granularity; 15s keeps it honest
 
@@ -109,10 +116,13 @@ let taskbarAttached = false;
 async function overlayTaskbarWidget(): Promise<void> {
   if (!taskbarWin || taskbarWin.isClosed()) return;
   const rects = await getTaskbarRects();
+  const pos = store.settings.taskbar.position;
   let x: number, y: number, h: number;
   if (rects && rects.taskbar.width >= rects.taskbar.height) {
     h = Math.min(48, Math.max(28, rects.taskbar.height));
-    x = rects.tray.x - TASKBAR_W - 4; // just left of the clock/notification area
+    x = pos === "left"
+      ? leftCellX(rects) // just left of the centered Start cluster
+      : rects.tray.x - TASKBAR_W - 4; // just left of the clock/notification area
     y = rects.taskbar.y + Math.round((rects.taskbar.height - h) / 2);
   } else {
     // vertical or unlocatable taskbar: float above the bottom-right corner instead
@@ -152,7 +162,7 @@ async function placeTaskbarWidget(): Promise<void> {
     taskbarWin.setTitle(TASKBAR_TITLE); // force the native title so the Win32 helpers can find it
   }
 
-  const n = await attachTaskbarCell(TASKBAR_TITLE, TASKBAR_W, existed ? 4_000 : 15_000);
+  const n = await attachTaskbarCell(TASKBAR_TITLE, TASKBAR_W, store.settings.taskbar.position, existed ? 4_000 : 15_000);
   if (n >= 1) {
     taskbarAttached = true;
     return;
@@ -173,14 +183,20 @@ async function placeTaskbarWidget(): Promise<void> {
 /** Resting x and the y it starts/ends at when hidden (sunk behind the taskbar). */
 async function panelPos(): Promise<{ x: number; hiddenY: number }> {
   const rects = await getTaskbarRects();
+  const pos = store.settings.taskbar.position;
   let x: number, restY: number;
   if (rects && rects.taskbar.width >= rects.taskbar.height) {
-    x = rects.taskbar.x + rects.taskbar.width - PANEL_W - PANEL_MARGIN;
+    // Open on the same side as the cell. Left: align the sheet's left edge with the
+    // cell (which hugs the centered Start cluster) so it reads as the cell's flyout.
+    // Right: flush to the taskbar's right edge, near the clock/cell.
+    x = pos === "left"
+      ? leftCellX(rects)
+      : rects.taskbar.x + rects.taskbar.width - PANEL_W - PANEL_MARGIN;
     restY = rects.taskbar.y - panelH - PANEL_MARGIN;
   } else {
     const monitors = await getMonitors();
     const p = monitors.find((m) => m.primary) ?? monitors[0];
-    x = p.x + p.width - PANEL_W - PANEL_MARGIN;
+    x = pos === "left" ? p.x + PANEL_MARGIN : p.x + p.width - PANEL_W - PANEL_MARGIN;
     restY = p.y + p.height - panelH - PANEL_MARGIN - 48; // reserve approx. taskbar height
   }
   // hiddenY lands the sheet's top at the taskbar's top edge — fully sunk
@@ -371,6 +387,7 @@ registerApi({
       lang: getLang(),
       leadMs: nextLeadMs(s),
       taskbarView: store.settings.taskbar.primaryView,
+      taskbarPos: store.settings.taskbar.position,
     };
   },
   togglePanel: () => togglePanel(),
@@ -410,6 +427,9 @@ registerApi({
       tray.refresh();
     }
     if (after.autostart !== before.autostart) await setAutostart(after.autostart);
+    // Moving the cell to the other side re-anchors it now instead of waiting for the
+    // next 60s placement pass (attachTaskbarCell repositions the already-owned window).
+    if (after.taskbar.position !== before.taskbar.position) await placeTaskbarWidget();
     await scheduler.rebuild();
     updateTray();
     return true;

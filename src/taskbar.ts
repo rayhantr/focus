@@ -8,7 +8,7 @@
  * re-pinning then happens in physical px; see win32.ts on the two DPI contexts.)
  */
 
-import { ffiOk, findWindow, findWindowEx, getWindowRect, withUnaware } from "./win32.ts";
+import { ffiOk, findWindow, findWindowEx, getWindowRect, taskbarContentLeft, withUnaware } from "./win32.ts";
 
 export interface Rect {
   x: number;
@@ -20,6 +20,8 @@ export interface Rect {
 export interface TaskbarRects {
   taskbar: Rect;
   tray: Rect;
+  /** Left edge (logical px) of the centered Start/apps cluster, or null if not found. */
+  clusterLeft: number | null;
 }
 
 function toRect(r: { L: number; T: number; R: number; B: number }): Rect {
@@ -37,7 +39,7 @@ export async function getTaskbarRects(): Promise<TaskbarRects | null> {
       const tn = findWindowEx(tb, null, "TrayNotifyWnd", null);
       const tray = toRect(tn !== null ? getWindowRect(tn) : getWindowRect(tb));
       if (taskbar.width <= 0 || taskbar.height <= 0) return null;
-      return { taskbar, tray };
+      return { taskbar, tray, clusterLeft: taskbarContentLeft(tb) };
     });
   } catch (e) {
     console.warn("taskbar rect query failed:", e);

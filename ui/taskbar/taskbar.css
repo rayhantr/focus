@@ -40,6 +40,10 @@ html, body {
   text-align: right;
   transition: transform 200ms ease, opacity 200ms ease;
 }
+/* Left-positioned cell: align both lines to the left (LTR) instead of the
+   clock-style right alignment. */
+#cell.left .face { align-items: flex-start; text-align: left; }
+
 .face.front { transform: translateY(0); opacity: 1; }
 .face.back { transform: translateY(100%); opacity: 0; }
 #cell:not(.static):hover .face.front { transform: translateY(-100%); opacity: 0; }

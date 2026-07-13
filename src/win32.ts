@@ -177,6 +177,27 @@ export function findByTitle(title: string): Deno.PointerValue[] {
   return out;
 }
 
+/**
+ * Left edge of the taskbar's centered content cluster — the `Start` button, else the
+ * classic task band (`ReBarWindow32`), whichever sits furthest left. On a Win11
+ * center-aligned taskbar this is where Start begins (the far-left corner is empty, or
+ * holds only the optional Widgets/weather button, which lives to the LEFT of this
+ * edge). Returns null when neither child is present. Call inside a withPMv2/withUnaware
+ * wrapper to get physical/logical pixels.
+ */
+export function taskbarContentLeft(tb: Deno.PointerValue): number | null {
+  if (!user32) return null;
+  let left: number | null = null;
+  for (const cls of ["Start", "ReBarWindow32"]) {
+    const h = findWindowEx(tb, null, cls, null);
+    if (h !== null) {
+      const r = getWindowRect(h);
+      if (r.R > r.L) left = left === null ? r.L : Math.min(left, r.L);
+    }
+  }
+  return left;
+}
+
 export function getWindowRect(h: Deno.PointerValue): Rect {
   if (!user32) return { L: 0, T: 0, R: 0, B: 0 };
   const buf = new Uint8Array(16);

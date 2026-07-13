@@ -76,6 +76,10 @@ export const en = {
   "settings.taskbarViewNext": "Next prayer",
   "settings.taskbarViewCurrent": "Current waqt",
   "settings.taskbarViewHint": "Hover the taskbar widget to peek at the other.",
+  "settings.taskbarPosition": "Taskbar widget position",
+  "settings.taskbarPositionRight": "Right (near the clock)",
+  "settings.taskbarPositionLeft": "Left (near Start)",
+  "settings.taskbarPositionHint": "The panel opens on the same side; the widget text aligns to it.",
   "settings.save": "Save",
   "settings.saved": "Saved ✓",
 

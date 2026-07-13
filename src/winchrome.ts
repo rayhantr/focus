@@ -45,6 +45,7 @@ import {
   setLong,
   setWindowPos,
   showWindow,
+  taskbarContentLeft,
   withPMv2,
 } from "./win32.ts";
 
@@ -58,6 +59,11 @@ const WS_EX_APPWINDOW = 0x00040000n;
 
 // ShowWindow command: hide the window (also drops any taskbar button it registered).
 const SW_HIDE = 0;
+
+// Fallback-only inset (logical px) from the taskbar's left edge for the "left" cell
+// position — used when the centered Start/apps cluster can't be located (see
+// attachCore, which normally anchors the cell just left of that cluster instead).
+const LEFT_INSET = 48;
 
 // SetWindowPos flag combinations (see winuser.h SWP_*).
 const SWP_FRAME_ONLY = 0x0037; // FRAMECHANGED|NOMOVE|NOSIZE|NOZORDER|NOACTIVATE
@@ -104,7 +110,7 @@ function hideFromTaskbar(h: Deno.PointerValue): void {
 
 // --- core operations (run synchronously; DPI-sensitive ones are wrapped by callers) ---
 
-function attachCore(target: string, logicalW: number): number {
+function attachCore(target: string, logicalW: number, position: "left" | "right"): number {
   const tb = findWindow("Shell_TrayWnd", null);
   if (tb === null) return 0;
   const cells = findByTitle(target);
@@ -115,18 +121,32 @@ function attachCore(target: string, logicalW: number): number {
   const tr = getWindowRect(tb);
   const w = Math.round(logicalW * scale);
   const gap = Math.round(4 * scale);
-  let x = tr.R - w - Math.round(180 * scale); // fallback if TrayNotifyWnd is missing
-  const tn = findWindowEx(tb, null, "TrayNotifyWnd", null);
-  if (tn !== null) {
-    const nr = getWindowRect(tn);
-    x = nr.L - w - gap;
+  let x: number;
+  if (position === "left") {
+    // Sit just left of the centered Start/apps cluster (Win11 centers them), so the
+    // cell hugs Start instead of stranding itself in the empty far-left corner — and
+    // stays clear of an optional far-left Widgets/weather button, which is further
+    // left than this edge. Fall back to a fixed corner inset if the cluster can't be
+    // located or sits too close to the left edge to fit the cell beside it.
+    const clusterL = taskbarContentLeft(tb);
+    const corner = tr.L + Math.round(LEFT_INSET * scale);
+    x = clusterL !== null && clusterL - gap - w >= tr.L ? clusterL - gap - w : corner;
+  } else {
+    x = tr.R - w - Math.round(180 * scale); // fallback if TrayNotifyWnd is missing
+    const tn = findWindowEx(tb, null, "TrayNotifyWnd", null);
+    if (tn !== null) {
+      const nr = getWindowRect(tn);
+      x = nr.L - w - gap; // just left of the clock/notification area
+    }
   }
 
   const style = getLong(cell, GWL_STYLE);
   setLong(cell, GWL_STYLE, (style & ~CHROME_BITS & ~WS_CHILD) | WS_VISIBLE);
   hideFromTaskbar(cell);
   setLong(cell, GWLP_HWNDPARENT, ptrToBigInt(tb)); // owner = taskbar
-  setWindowPos(cell, HWND_TOPMOST, x, tr.T, w, tr.B - tr.T, SWP_SHOW_TOPMOST);
+  // Start 1px below the taskbar top and shrink height by 1px so the taskbar's own
+  // top border line stays visible behind the cell instead of being covered.
+  setWindowPos(cell, HWND_TOPMOST, x, tr.T + 1, w, tr.B - tr.T - 1, SWP_SHOW_TOPMOST);
   return 1;
 }
 
@@ -170,13 +190,19 @@ function lockdownCore(target: string): number {
 
 /**
  * Own the taskbar cell (titled exactly `title`) to Shell_TrayWnd and pin it over
- * the taskbar, `logicalW` logical px wide, left of the tray area. Returns 1 on
- * success, 0 when the cell or taskbar can't be found.
+ * the taskbar, `logicalW` logical px wide. `position` picks the side: "right" (left
+ * of the tray/clock, the default) or "left" (the taskbar's left edge, past Start).
+ * Returns 1 on success, 0 when the cell or taskbar can't be found.
  */
-export async function attachTaskbarCell(title: string, logicalW: number, timeoutMs = 15_000): Promise<number> {
+export async function attachTaskbarCell(
+  title: string,
+  logicalW: number,
+  position: "left" | "right" = "right",
+  timeoutMs = 15_000,
+): Promise<number> {
   if (!ffiOk) return 0;
   try {
-    return await retryOp(() => withPMv2(() => attachCore(title, logicalW)), 1, timeoutMs);
+    return await retryOp(() => withPMv2(() => attachCore(title, logicalW, position)), 1, timeoutMs);
   } catch (e) {
     console.warn("attachTaskbarCell failed:", e);
     return 0;

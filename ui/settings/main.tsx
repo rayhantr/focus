@@ -19,6 +19,7 @@ interface Form {
   language: "en" | "bn";
   autostart: boolean;
   taskbarView: "next" | "current";
+  taskbarPosition: "left" | "right";
   location: Settings["location"];
   calculation: Settings["calculation"];
   leadMinutes: number;
@@ -32,6 +33,7 @@ function toForm(s: Settings): Form {
     language: s.language,
     autostart: s.autostart,
     taskbarView: s.taskbar.primaryView,
+    taskbarPosition: s.taskbar.position,
     location: { ...s.location },
     calculation: { ...s.calculation },
     leadMinutes: s.notify.leadMinutes,
@@ -50,7 +52,7 @@ function toPatch(f: Form, _s: Settings): Partial<Settings> {
   return {
     language: f.language,
     autostart: f.autostart,
-    taskbar: { primaryView: f.taskbarView },
+    taskbar: { primaryView: f.taskbarView, position: f.taskbarPosition },
     location: { ...f.location, lat: Number(f.location.lat), lng: Number(f.location.lng) },
     calculation: f.calculation,
     notify: { leadMinutes: Math.max(0, Number(f.leadMinutes) || 0), perPrayer },
@@ -149,6 +151,17 @@ function App() {
         </select>
       </div>
       <div class="hint">{t("settings.taskbarViewHint")}</div>
+      <div class="row">
+        <label>{t("settings.taskbarPosition")}</label>
+        <select
+          value={form.taskbarPosition}
+          onChange={(e) => patch({ taskbarPosition: (e.target as HTMLSelectElement).value as "left" | "right" })}
+        >
+          <option value="right">{t("settings.taskbarPositionRight")}</option>
+          <option value="left">{t("settings.taskbarPositionLeft")}</option>
+        </select>
+      </div>
+      <div class="hint">{t("settings.taskbarPositionHint")}</div>
       <h2>{t("settings.location")}</h2>
       <div class="row">
         <label>{t("settings.location")}</label>
