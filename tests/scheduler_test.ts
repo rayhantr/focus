@@ -99,6 +99,31 @@ Deno.test("buildSchedule: after isha, only tomorrow-fajr prayer events remain", 
   assertEquals(fajrStart.at, t0 + 24 * HOUR + 5 * HOUR);
 });
 
+Deno.test("buildSchedule: keeps a lockStart whose window contains now, drops expired", () => {
+  const t0 = anchor();
+  const s = settings(); // default lock rule: offset 5, duration 15
+  const dhuhr = t0 + 12 * HOUR; // lock window 12:05–12:20
+
+  // Rebuild mid-window (e.g. app launch / wake at 12:15): the lockStart must
+  // survive so the tick loop can catch up and engage.
+  let events = buildSchedule(dhuhr + 15 * MIN - 1, s, day(t0), day(t0 + 24 * HOUR));
+  const inWindow = events.find((e) => e.kind === "lockStart" && e.prayer === "dhuhr");
+  assert(inWindow, "in-window lockStart must be kept for catch-up");
+  assertEquals(inWindow.at, dhuhr + 5 * MIN);
+  assertEquals(events[0], inWindow, "past `at` sorts it first, so it fires on the next tick");
+  assert(
+    events.some((e) => e.kind === "lockEnd" && e.prayer === "dhuhr"),
+    "its lockEnd stays queued as the release backstop",
+  );
+
+  // Rebuild after the window has passed: nothing to catch up.
+  events = buildSchedule(dhuhr + 30 * MIN, s, day(t0), day(t0 + 24 * HOUR));
+  assert(
+    !events.some((e) => e.kind === "lockStart" && e.prayer === "dhuhr"),
+    "expired lock window is dropped",
+  );
+});
+
 Deno.test("shouldFireLate: stale preNotify dropped, fresh fires", () => {
   const now = Date.now();
   const stale: ScheduledEvent = { at: now - 2 * MIN, kind: "preNotify", prayer: "asr" };

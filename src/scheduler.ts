@@ -6,7 +6,15 @@ const MIN = 60_000;
 
 /**
  * Build the future event queue from today's and tomorrow's timetables.
- * Pure: no clocks, no I/O. Only events strictly after `now`, ascending.
+ * Pure: no clocks, no I/O. Events strictly after `now`, ascending — plus any
+ * lockStart whose window still CONTAINS `now`, so a rebuild that happens
+ * mid-window (app launch, wake from sleep, a settings save) still engages the
+ * lock instead of silently skipping it; the tick loop dedupes re-fires across
+ * rebuilds (#firedLockStart). Limitation: the inputs are today + tomorrow's
+ * fajr, so a lock window that started before midnight isn't visible to a
+ * post-midnight rebuild — unreachable with the UI's ≤60 min offset/duration at
+ * normal latitudes, and lock RELEASE never depends on this (LockController
+ * holds its own deadline).
  */
 export function buildSchedule(
   now: number,
@@ -41,7 +49,9 @@ export function buildSchedule(
   midnight.setHours(24, 0, 5, 0);
   events.push({ at: midnight.getTime(), kind: "midnightRollover" });
 
-  return events.filter((e) => e.at > now).sort((a, b) => a.at - b.at);
+  return events
+    .filter((e) => e.at > now || (e.kind === "lockStart" && e.lockEnd > now))
+    .sort((a, b) => a.at - b.at);
 }
 
 /**
@@ -73,6 +83,11 @@ export class Scheduler {
   #timer: ReturnType<typeof setInterval> | undefined;
   #lastTick = Date.now();
   #rebuild: RebuildFn;
+  // `${prayer}:${lockEnd}` of the last lockStart actually emitted. Rebuilds
+  // re-queue an in-window lockStart (see buildSchedule); without this it would
+  // re-fire on every rebuild — releasing and respawning the active lock
+  // (visible flicker) or repeating a bypass toast.
+  #firedLockStart: string | null = null;
   pausedUntil = 0;
 
   constructor(rebuild: RebuildFn) {
@@ -91,6 +106,8 @@ export class Scheduler {
 
   async start(): Promise<void> {
     await this.rebuild();
+    // Immediate first tick: a launch inside a lock window engages now, not 15s later.
+    await this.#tick();
     this.#timer = setInterval(() => this.#tick(), TICK_MS);
   }
 
@@ -111,6 +128,9 @@ export class Scheduler {
 
   resumeLocks(): void {
     this.pausedUntil = 0;
+    // An explicit resume means "lock me again": clear the dedupe so a rebuild
+    // can re-fire the current window's lockStart even if it fired before the pause.
+    this.#firedLockStart = null;
   }
 
   get pausedToday(): boolean {
@@ -129,7 +149,15 @@ export class Scheduler {
     while (this.#queue.length && this.#queue[0].at <= now) {
       const e = this.#queue.shift()!;
       if (!shouldFireLate(e, now)) continue;
-      if (e.kind === "lockStart" && this.pausedToday) continue;
+      if (e.kind === "lockStart") {
+        if (this.pausedToday) continue;
+        // Keyed on lockEnd too: a mid-window rule change shifts it, and that
+        // NEW window should fire. Recorded only here — after the late/paused
+        // checks — so a paused day doesn't burn the key.
+        const key = `${e.prayer}:${e.lockEnd}`;
+        if (key === this.#firedLockStart) continue;
+        this.#firedLockStart = key;
+      }
       await this.#emit(e);
       if (e.kind === "midnightRollover") {
         await this.rebuild();

@@ -29,9 +29,15 @@ export async function detectByIp(): Promise<LocationFix> {
   } catch {
     const j = await fetchJson("https://ipwho.is/");
     if (j.success === false) throw new Error("ipwho.is: lookup failed");
+    const lat = Number(j.latitude);
+    const lng = Number(j.longitude);
+    // Guard before the caller persists this: NaN coordinates would poison the
+    // cached location and break every prayer-time computation until the next
+    // successful detect.
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error("ipwho.is: unexpected payload");
     return {
-      lat: Number(j.latitude),
-      lng: Number(j.longitude),
+      lat,
+      lng,
       city: String(j.city ?? ""),
       countryCode: String(j.country_code ?? ""),
     };

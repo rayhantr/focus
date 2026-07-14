@@ -607,9 +607,13 @@ async function quitApp(): Promise<void> {
 const tray = new TrayController({
   openSettings,
   isPaused: () => scheduler.pausedToday,
-  togglePause: () => {
-    if (scheduler.pausedToday) scheduler.resumeLocks();
-    else {
+  togglePause: async () => {
+    if (scheduler.pausedToday) {
+      scheduler.resumeLocks();
+      // Rebuild re-queues an in-window lockStart (see buildSchedule), so
+      // resuming inside a lock window re-engages on the next tick.
+      await scheduler.rebuild();
+    } else {
       scheduler.pauseLocksToday();
       if (lock.active) lock.release();
     }

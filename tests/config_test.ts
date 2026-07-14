@@ -69,6 +69,20 @@ Deno.test("save: merge + persistence + onChange", async () => {
   await Deno.remove(dir, { recursive: true });
 });
 
+Deno.test("save: notify.perPrayer replaces wholesale so overrides can be cleared", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "pf-test-" });
+  const store = new ConfigStore(dir);
+  await store.load();
+  store.save({ notify: { leadMinutes: 15, perPrayer: { asr: 45 } } });
+  assertEquals(effectiveLead(store.settings, "asr"), 45);
+  // Clearing an override omits its key; a deep merge would resurrect it.
+  store.save({ notify: { leadMinutes: 15, perPrayer: {} } });
+  assertEquals(store.settings.notify.perPrayer, {});
+  assertEquals(effectiveLead(store.settings, "asr"), 15);
+  await store.flush();
+  await Deno.remove(dir, { recursive: true });
+});
+
 Deno.test("effectiveLead: per-prayer override falls back to global", () => {
   const s = structuredClone(DEFAULTS);
   s.notify.leadMinutes = 15;

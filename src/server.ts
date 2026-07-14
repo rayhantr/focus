@@ -31,15 +31,30 @@ const json = (status: number, payload: unknown) =>
 
 /** Start the UI server. deno desktop injects DENO_SERVE_ADDRESS; Deno.serve binds to it. */
 export function startServer(): string {
-  Deno.serve(async (req) => {
+  const addr = Deno.env.get("DENO_SERVE_ADDRESS");
+  const port = (addr ?? "tcp:127.0.0.1:8000").split(":").pop();
+  const expectedHost = `127.0.0.1:${port}`;
+  const base = `http://${expectedHost}`;
+
+  const handler = async (req: Request): Promise<Response> => {
+    // Our own pages are the only legitimate clients, and they always arrive
+    // with Host 127.0.0.1:<port> and (on fetch POSTs) the local Origin. A DNS-
+    // rebinding page reaches this port under a foreign Host, and any cross-
+    // origin browser request carries a foreign Origin — reject both, or an
+    // arbitrary website could call /api/testLock, /api/quit, /api/saveSettings.
+    const origin = req.headers.get("origin");
+    if (req.headers.get("host") !== expectedHost || (origin !== null && origin !== base)) {
+      return new Response("forbidden", { status: 403 });
+    }
+
     const path = new URL(req.url).pathname;
 
     if (req.method === "POST" && path.startsWith("/api/")) {
-      const handler = api.get(path.slice(5));
-      if (!handler) return json(404, { ok: false, error: "unknown api" });
+      const fn = api.get(path.slice(5));
+      if (!fn) return json(404, { ok: false, error: "unknown api" });
       try {
         const args = await req.json().catch(() => []);
-        const result = await handler(...(Array.isArray(args) ? args : []));
+        const result = await fn(...(Array.isArray(args) ? args : []));
         return json(200, { ok: true, result: result ?? null });
       } catch (e) {
         return json(500, { ok: false, error: String(e) });
@@ -48,9 +63,15 @@ export function startServer(): string {
 
     const page = PAGES[path];
     if (!page) return new Response("not found", { status: 404 });
-    return new Response(page.body, { headers: { "content-type": page.type } });
-  });
-  const addr = Deno.env.get("DENO_SERVE_ADDRESS") ?? "tcp:127.0.0.1:8000";
-  const port = addr.split(":").pop();
-  return `http://127.0.0.1:${port}`;
+    return new Response(page.body, {
+      headers: { "content-type": page.type, "x-frame-options": "DENY" },
+    });
+  };
+
+  // Without the injected address (plain `deno run`), Deno.serve would default
+  // to 0.0.0.0 — LAN-exposed. Bind loopback explicitly in that fallback only;
+  // when the env var is present, Deno.serve consumes it and must win.
+  if (addr) Deno.serve(handler);
+  else Deno.serve({ hostname: "127.0.0.1" }, handler);
+  return base;
 }

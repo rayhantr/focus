@@ -22,6 +22,7 @@ export class LockController {
   #windows: Deno.BrowserWindow[] = [];
   #guard: ReturnType<typeof setInterval> | undefined;
   #active = false;
+  #endsAt = 0;
   #gen = 0;
   #base: string;
   #onChange: LockChangeHandler;
@@ -55,6 +56,7 @@ export class LockController {
     }
 
     this.#active = true;
+    this.#endsAt = endsAt;
     this.#gen++;
     const monitors = await getMonitors();
     for (const m of monitors) {
@@ -62,6 +64,14 @@ export class LockController {
     }
     lockdownWindows(LOCK_TITLE, monitors.length); // strip chrome + pin to exact physical monitor bounds
     this.#guard = setInterval(() => {
+      // The lock owns its release deadline: the scheduler's lockEnd event can
+      // be lost across a queue rebuild (sleep past the window, settings save),
+      // which would leave the lock engaged forever. Wall-clock checked every
+      // guard tick, so release lands within ~1s of endsAt and survives sleep.
+      if (Date.now() >= this.#endsAt) {
+        this.release();
+        return;
+      }
       for (const w of this.#windows) {
         try {
           if (!w.isClosed()) {

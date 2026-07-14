@@ -91,6 +91,13 @@ export class ConfigStore {
   /** Deep-merge a patch, persist (debounced), notify listeners. */
   save(patch: Partial<Settings>): Settings {
     this.#settings = deepMerge(this.#settings, patch);
+    // notify.perPrayer is a sparse override map: a cleared override is an
+    // ABSENT key, which the deep merge above would silently resurrect from the
+    // old settings. Treat the subtree as atomic — the patch's map replaces the
+    // stored one. (deepMerge made #settings.notify a fresh object, safe to mutate.)
+    if (patch.notify && "perPrayer" in patch.notify) {
+      this.#settings.notify.perPrayer = { ...patch.notify.perPrayer };
+    }
     const changed = Object.keys(patch);
     clearTimeout(this.#saveTimer);
     this.#saveTimer = setTimeout(() => this.#write(), 250);

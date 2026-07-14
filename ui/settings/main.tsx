@@ -130,12 +130,16 @@ function App() {
 
   const detectNow = async () => {
     setDetected("…");
-    const fix = await rpc<LocationFix | null>("detectLocationNow");
-    if (fix) {
-      setDetected(`${fix.city}, ${fix.countryCode} (${fix.lat.toFixed(3)}, ${fix.lng.toFixed(3)})`);
-      patch({ location: { ...form.location, ...fix } });
-    } else {
-      setDetected("✗");
+    try {
+      const fix = await rpc<LocationFix | null>("detectLocationNow");
+      if (fix) {
+        setDetected(`${fix.city}, ${fix.countryCode} (${fix.lat.toFixed(3)}, ${fix.lng.toFixed(3)})`);
+        patch({ location: { ...form.location, ...fix } });
+      } else {
+        setDetected("✗");
+      }
+    } catch {
+      setDetected("✗"); // RPC itself failed — don't leave the label stuck at "…"
     }
   };
 
