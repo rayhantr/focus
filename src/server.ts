@@ -1,6 +1,7 @@
 // Self-contained pages produced by `deno task ui:build` (Preact + Vite + singlefile).
 import panelHtml from "../ui/dist/panel/index.html" with { type: "text" };
 import taskbarHtml from "../ui/dist/taskbar/index.html" with { type: "text" };
+import menuHtml from "../ui/dist/menu/index.html" with { type: "text" };
 import lockHtml from "../ui/dist/lock/index.html" with { type: "text" };
 import settingsHtml from "../ui/dist/settings/index.html" with { type: "text" };
 
@@ -8,6 +9,7 @@ const PAGES: Record<string, { body: string; type: string }> = {
   "/": { body: "<!doctype html><title>Prayer Focus</title>", type: "text/html; charset=utf-8" },
   "/panel": { body: panelHtml, type: "text/html; charset=utf-8" },
   "/taskbar": { body: taskbarHtml, type: "text/html; charset=utf-8" },
+  "/menu": { body: menuHtml, type: "text/html; charset=utf-8" },
   "/lock": { body: lockHtml, type: "text/html; charset=utf-8" },
   "/settings": { body: settingsHtml, type: "text/html; charset=utf-8" },
 };

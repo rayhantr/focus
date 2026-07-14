@@ -79,7 +79,18 @@ export const en = {
   "settings.taskbarPosition": "Taskbar widget position",
   "settings.taskbarPositionRight": "Right (near the clock)",
   "settings.taskbarPositionLeft": "Left (near Start)",
+  "settings.taskbarPositionCorner": "Corner (far left edge)",
   "settings.taskbarPositionHint": "The panel opens on the same side; the widget text aligns to it.",
+  "settings.taskbarColor": "Taskbar widget color",
+  "settings.taskbarColorTransparent": "Transparent",
+  "settings.taskbarColorPick": "Pick from screen",
+  "settings.taskbarColorPicking": "Picking…",
+  "settings.taskbarColorClear": "Clear",
+  "settings.taskbarColorInvalid": "Use a hex color like #1f1f1f",
+  "settings.taskbarColorHint":
+    "Background of the widget. Leave it blank to stay transparent so the real taskbar shows through — the closest match on most setups. Otherwise type a hex color, or pick one from anywhere on screen.",
+  "settings.taskbarColorPickHint":
+    "Move the mouse over the color you want — the preview follows it — then click or press Enter to take it. Esc or right-click cancels. The click also reaches whatever is under it, so press Enter instead when you are over something clickable.",
   "settings.save": "Save",
   "settings.saved": "Saved ✓",
 

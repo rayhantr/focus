@@ -81,7 +81,18 @@ export const bn: Record<StringKey, string> = {
   "settings.taskbarPosition": "টাস্কবার উইজেটের অবস্থান",
   "settings.taskbarPositionRight": "ডানে (ঘড়ির পাশে)",
   "settings.taskbarPositionLeft": "বামে (স্টার্টের পাশে)",
+  "settings.taskbarPositionCorner": "কোণে (একদম বাম প্রান্তে)",
   "settings.taskbarPositionHint": "প্যানেল একই পাশে খুলবে; উইজেটের লেখাও সেই পাশে সাজবে।",
+  "settings.taskbarColor": "টাস্কবার উইজেটের রং",
+  "settings.taskbarColorTransparent": "স্বচ্ছ",
+  "settings.taskbarColorPick": "স্ক্রিন থেকে নিন",
+  "settings.taskbarColorPicking": "নেওয়া হচ্ছে…",
+  "settings.taskbarColorClear": "মুছুন",
+  "settings.taskbarColorInvalid": "#1f1f1f-এর মতো হেক্স রং লিখুন",
+  "settings.taskbarColorHint":
+    "উইজেটের ব্যাকগ্রাউন্ড। খালি রাখলে স্বচ্ছ থাকবে, অর্থাৎ আসল টাস্কবারই দেখা যাবে — বেশিরভাগ ক্ষেত্রে এটিই সবচেয়ে মানানসই। নয়তো হেক্স রং লিখুন, অথবা স্ক্রিনের যেকোনো জায়গা থেকে বেছে নিন।",
+  "settings.taskbarColorPickHint":
+    "যে রঙের উপর চান সেখানে মাউস নিন — প্রিভিউ সঙ্গে সঙ্গে বদলাবে — তারপর ক্লিক করুন বা Enter চাপুন। Esc বা ডান-ক্লিকে বাতিল হবে। ক্লিকটি নিচের জিনিসের কাছেও পৌঁছায়, তাই ক্লিকযোগ্য কিছুর উপরে থাকলে Enter চাপুন।",
   "settings.save": "সংরক্ষণ করুন",
   "settings.saved": "সংরক্ষিত ✓",
 

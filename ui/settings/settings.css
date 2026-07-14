@@ -7,9 +7,22 @@ h2 {
   font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
   color: var(--accent); margin: 26px 0 10px;
 }
-.row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
-label { font-size: 14px; min-width: 220px; }
-.hint { font-size: 12px; color: var(--dim); margin: 4px 0 10px; max-width: 640px; line-height: 1.5; }
+/* Inline setting: label (with its description beneath) on the left, controls on the
+   right, so every field in the panel lands on a common right-hand edge. The label
+   column takes the slack; the field column is sized by its contents. */
+.row {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 24px; margin: 14px 0; max-width: 760px;
+}
+/* 220px floor keeps the label readable instead of squeezing to a sliver; past that
+   the field column wraps below, where margin-left:auto still holds it to the right. */
+.row .rowlabel { flex: 1 1 220px; min-width: 220px; line-height: 1; }
+.row .rowfield { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: 10px; }
+label { font-size: 14px; }
+.hint { font-size: 12px; color: var(--dim); margin: 4px 0 10px; max-width: 640px; line-height: 1; }
+/* Description under its label: tighter to the label than a standalone hint, and no
+   trailing margin — the row's own margin already spaces it from the next setting. */
+.rowlabel .hint { margin: 0; }
 input, select, textarea {
   background: var(--panel-2); color: var(--text);
   padding: 8px 10px; font-family: inherit; font-size: 13.5px;
@@ -47,6 +60,32 @@ th, td { padding: 6px 12px 6px 0; text-align: left; font-weight: normal; }
 th { color: var(--dim); font-size: 12px; }
 .btn { background: var(--panel-2); padding: 8px 14px; font-size: 13.5px; }
 .btn:hover { background: var(--line); }
+.btn:disabled { color: var(--dim); cursor: default; }
+.btn:disabled:hover { background: var(--panel-2); }
+
+/* Taskbar-color picker. The hex field is sized for "#rrggbb" and rendered in a mono
+   face so the digits don't reflow as they're typed or replaced by a pick. */
+.hex { width: 110px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.hint.warn { color: var(--accent-2); }
+/* Miniature of the taskbar cell (its real width, font and text colors) so a picked
+   color can be judged before saving — above all whether the text still reads on it.
+   The checkerboard underneath shows through when no color is set, which is the honest
+   picture: the cell is transparent and the live taskbar shows through there. */
+.cellpreview {
+  width: 116px; height: 40px; flex: none;
+  background-image:
+    conic-gradient(#39493f 25%, #26322b 0 50%, #39493f 0 75%, #26322b 0);
+  background-size: 12px 12px;
+}
+.cellpreview .fill {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column; justify-content: center; align-items: flex-end;
+  gap: 1px; padding: 2px 10px;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Nirmala UI", system-ui, sans-serif;
+  font-size: 12px; line-height: 1.25;
+}
+.cellpreview .p1 { color: var(--text); white-space: nowrap; }
+.cellpreview .p2 { color: var(--accent); white-space: nowrap; }
 .btn.primary { background: var(--accent); color: #06130c; font-weight: 700; }
 .btn.primary:hover { filter: brightness(1.1); }
 #savebar {

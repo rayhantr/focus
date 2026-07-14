@@ -24,6 +24,17 @@ export type CalcMethodId =
   | "Tehran"
   | "NorthAmerica";
 
+/**
+ * Where the taskbar cell sits. Win11 centers its taskbar content, so these are three
+ * genuinely different spots (see src/win32.ts taskbarContentLeft):
+ *  - "right"  — just left of the clock/tray, like a second clock cell (default)
+ *  - "left"   — just left of the centered Start/apps cluster, hugging Start
+ *  - "corner" — flush in the taskbar's leftmost corner (empty on a centered taskbar)
+ * The panel opens on the same side, and both left-hand positions align the cell text
+ * LTR instead of the clock-style right alignment.
+ */
+export type TaskbarPosition = "left" | "right" | "corner";
+
 export interface LockRule {
   enabled: boolean;
   offsetMin: number; // minutes after waqt start before lock engages
@@ -57,10 +68,16 @@ export interface Settings {
   taskbar: {
     // Which waqt the taskbar cell shows at rest; hovering it reveals the other.
     primaryView: "next" | "current";
-    // Which side of the taskbar the cell sits on. "right" = left of the clock/tray
-    // (default); "left" = left edge of the taskbar (past Start). The panel opens on
-    // the same side and the cell text aligns to that side (LTR when left).
-    position: "left" | "right";
+    position: TaskbarPosition;
+    /**
+     * Cell background as "#rrggbb", or null to stay fully transparent so the real
+     * taskbar (Mica) shows through — the default, and what blends best on most
+     * setups. A fixed color exists for the cases transparency can't cover: Mica
+     * disabled, a taskbar tinted by a wallpaper accent, or simply a deliberate
+     * tint. The settings eyedropper samples the live screen, so the intended way
+     * to set this is to pick the taskbar's own pixels.
+     */
+    color: string | null;
   };
 }
 

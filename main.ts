@@ -8,7 +8,7 @@ import { LockController } from "./src/lock.ts";
 import { TrayController } from "./src/tray.ts";
 import { setAutostart } from "./src/autostart.ts";
 import { getMonitors } from "./src/monitors.ts";
-import { getTaskbarRects } from "./src/taskbar.ts";
+import { getTaskbarRects, type TaskbarRects } from "./src/taskbar.ts";
 import {
   attachTaskbarCell,
   type ClickWatcher,
@@ -19,8 +19,9 @@ import {
   stripChrome,
   watchOutsideClick,
 } from "./src/winchrome.ts";
+import { cancelScreenPick, pickScreenColor, probeColor } from "./src/eyedropper.ts";
 import { getLang, prayerLabel, setLang, strings, t } from "./src/i18n/mod.ts";
-import type { PrayerName, Settings, WaqtState } from "./src/types.ts";
+import type { PrayerName, Settings, TaskbarPosition, WaqtState } from "./src/types.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 const PANEL_W = 300;
@@ -36,14 +37,27 @@ const PANEL_MARGIN = 10; // gap from the screen/taskbar edges, like a floating f
 const PANEL_GLASS = { r: 12, g: 20, b: 16, a: 90 }; // dark green tint, low alpha so the OS blur behind reads through
 const PANEL_SLIDE_MS = 180; // native window-position slide; independent of CEF's paint loop, so it
 const panelSlideDy = () => panelH + PANEL_MARGIN; // still animates when the window is unfocused (CSS transitions don't)
+const MENU_TITLE = "Prayer Focus Menu";
+const MENU_W = 200;
+// The cell's context menu has fixed-height rows (ui/menu/menu.css), so its height is
+// known up front and it needs none of the panel's measure-and-report round-trip — the
+// panel's content height genuinely varies (prayer table, taller Bangla layout); a menu
+// row's can't. Keep in sync with menu.css: 6px padding top and bottom, a 24px header,
+// four 30px rows, two 11px gaps.
+const MENU_H = 6 * 2 + 24 + 30 * 4 + 11 * 2;
 const TASKBAR_W = 116;
 const CELL_GAP = 4; // logical-px gap between the cell and the taskbar cluster it hugs (matches winchrome attachCore)
 const TASKBAR_LEFT_INSET = 48; // fallback inset when the Start cluster can't be located (overlay path)
 const TASKBAR_TITLE = "Prayer Focus Taskbar";
-/** Logical x of the left-positioned cell's left edge: just left of the centered Start cluster. */
-function leftCellX(rects: { taskbar: { x: number }; clusterLeft: number | null }): number {
-  if (rects.clusterLeft === null) return rects.taskbar.x + TASKBAR_LEFT_INSET;
-  return Math.max(rects.taskbar.x + TASKBAR_LEFT_INSET, rects.clusterLeft - CELL_GAP - TASKBAR_W);
+/** Logical x of the cell's left edge for each position (see TaskbarPosition). */
+function cellX(pos: TaskbarPosition, rects: TaskbarRects): number {
+  if (pos === "corner") return rects.taskbar.x; // flush in the leftmost corner
+  if (pos === "left") {
+    // Just left of the centered Start/apps cluster, hugging Start.
+    if (rects.clusterLeft === null) return rects.taskbar.x + TASKBAR_LEFT_INSET;
+    return Math.max(rects.taskbar.x + TASKBAR_LEFT_INSET, rects.clusterLeft - CELL_GAP - TASKBAR_W);
+  }
+  return rects.tray.x - TASKBAR_W - CELL_GAP; // right: just left of the clock/tray
 }
 const TASKBAR_PLACE_MS = 60_000; // re-anchor/re-embed (tray width changes, explorer restarts)
 const TRAY_INFO_MS = 15_000; // tooltip countdown has minute granularity; 15s keeps it honest
@@ -93,6 +107,11 @@ let panelWin: Deno.BrowserWindow | null = null;
 let panelVisible = false;
 let panelHiddenAt = 0;
 let panelClickWatcher: ClickWatcher | null = null; // global mouse hook that dismisses the panel on an outside click
+let menuWin: Deno.BrowserWindow | null = null;
+let menuVisible = false;
+let menuHiddenAt = 0;
+let menuClickWatcher: ClickWatcher | null = null;
+let menuClosed: (() => void) | null = null; // resolves the open request the cell is holding (see openTaskbarMenu)
 let taskbarWin: Deno.BrowserWindow | null = null;
 let lockedState: { prayer: PrayerName; endsAt: number } | null = null;
 
@@ -120,9 +139,7 @@ async function overlayTaskbarWidget(): Promise<void> {
   let x: number, y: number, h: number;
   if (rects && rects.taskbar.width >= rects.taskbar.height) {
     h = Math.min(48, Math.max(28, rects.taskbar.height));
-    x = pos === "left"
-      ? leftCellX(rects) // just left of the centered Start cluster
-      : rects.tray.x - TASKBAR_W - 4; // just left of the clock/notification area
+    x = cellX(pos, rects);
     y = rects.taskbar.y + Math.round((rects.taskbar.height - h) / 2);
   } else {
     // vertical or unlocatable taskbar: float above the bottom-right corner instead
@@ -139,10 +156,10 @@ async function overlayTaskbarWidget(): Promise<void> {
 }
 
 /**
- * Create the cell (if needed) and pin it over the taskbar as an OWNED window
- * of Shell_TrayWnd — owned windows always stay above their owner, so clicking
- * the taskbar can never raise the taskbar over the cell. Falls back to a
- * plain topmost float if attaching fails.
+ * Create the cell (if needed) and pin it over the taskbar as a topmost tool window,
+ * re-asserting that topmost on every pass (the Win11 taskbar re-asserts its own, so
+ * this is a standing contest, not a one-time fix). Falls back to a plain topmost
+ * float if the cell or taskbar can't be found.
  */
 async function placeTaskbarWidget(): Promise<void> {
   const existed = taskbarWin && !taskbarWin.isClosed();
@@ -186,17 +203,17 @@ async function panelPos(): Promise<{ x: number; hiddenY: number }> {
   const pos = store.settings.taskbar.position;
   let x: number, restY: number;
   if (rects && rects.taskbar.width >= rects.taskbar.height) {
-    // Open on the same side as the cell. Left: align the sheet's left edge with the
-    // cell (which hugs the centered Start cluster) so it reads as the cell's flyout.
-    // Right: flush to the taskbar's right edge, near the clock/cell.
-    x = pos === "left"
-      ? leftCellX(rects)
-      : rects.taskbar.x + rects.taskbar.width - PANEL_W - PANEL_MARGIN;
+    // Open on the same side as the cell, keeping PANEL_MARGIN off the screen edges.
+    // "left" aligns the sheet under the cell (which hugs Start) so it reads as its
+    // flyout; "corner"/"right" sit flush against their screen edge, like a flyout.
+    if (pos === "right") x = rects.taskbar.x + rects.taskbar.width - PANEL_W - PANEL_MARGIN;
+    else if (pos === "corner") x = rects.taskbar.x + PANEL_MARGIN;
+    else x = cellX(pos, rects);
     restY = rects.taskbar.y - panelH - PANEL_MARGIN;
   } else {
     const monitors = await getMonitors();
     const p = monitors.find((m) => m.primary) ?? monitors[0];
-    x = pos === "left" ? p.x + PANEL_MARGIN : p.x + p.width - PANEL_W - PANEL_MARGIN;
+    x = pos === "right" ? p.x + p.width - PANEL_W - PANEL_MARGIN : p.x + PANEL_MARGIN;
     restY = p.y + p.height - panelH - PANEL_MARGIN - 48; // reserve approx. taskbar height
   }
   // hiddenY lands the sheet's top at the taskbar's top edge — fully sunk
@@ -274,13 +291,15 @@ async function togglePanel(): Promise<void> {
     });
   }
   panelWin.show();
-  // Anchor the exact hidden start position each open (absolute, physical). Deno's
-  // setPosition no-ops on a REUSED window because our native slides bypass its
-  // position tracking; without this the rest position creeps a little lower every
-  // open/close cycle (eventually under the taskbar). Anchoring here makes every open
-  // reproduce first-open geometry. No-op on the very first open (the window isn't up
-  // yet — the constructor already positioned it, and the slide below retries).
-  snapWindow(PANEL_TITLE, x, hiddenY);
+  // Anchor the exact hidden start position AND size each open (absolute, physical).
+  // Deno's setPosition/setSize both no-op on a REUSED window because our native slides
+  // bypass its tracking; without this the rest position creeps a little lower every
+  // open/close cycle (eventually under the taskbar). The size matters just as much: the
+  // setSize above can't take, so this is what actually applies a newly measured panelH —
+  // otherwise the window keeps its old height while restY assumes the new one, and the
+  // taskbar gap grows or vanishes by the difference. No-op on the very first open (the
+  // window isn't up yet — the constructor already positioned and sized it).
+  snapWindow(PANEL_TITLE, x, hiddenY, PANEL_W, panelH);
   panelWin.focus(); // enables blur-dismiss (when Windows grants activation)
   panelVisible = true;
   // Slide the whole sheet up out from behind the taskbar (native, so it plays
@@ -293,6 +312,107 @@ async function togglePanel(): Promise<void> {
   panelClickWatcher?.stop();
   panelClickWatcher = watchOutsideClick(PANEL_TITLE, () => {
     if (panelVisible) hidePanel();
+  });
+}
+
+// ---------- the cell's context menu ----------
+/** Top-left of the menu, floating in the same gap above the taskbar the panel rests in. */
+async function menuPos(): Promise<{ x: number; y: number }> {
+  const rects = await getTaskbarRects();
+  const pos = store.settings.taskbar.position;
+  if (rects && rects.taskbar.width >= rects.taskbar.height) {
+    // Same side rules as panelPos, so the cell's two flyouts always open in the same spot.
+    let x: number;
+    if (pos === "right") x = rects.taskbar.x + rects.taskbar.width - MENU_W - PANEL_MARGIN;
+    else if (pos === "corner") x = rects.taskbar.x + PANEL_MARGIN;
+    else x = cellX(pos, rects);
+    return { x, y: rects.taskbar.y - MENU_H - PANEL_MARGIN };
+  }
+  const monitors = await getMonitors();
+  const p = monitors.find((m) => m.primary) ?? monitors[0];
+  return {
+    x: pos === "right" ? p.x + p.width - MENU_W - PANEL_MARGIN : p.x + PANEL_MARGIN,
+    y: p.y + p.height - MENU_H - PANEL_MARGIN - 48, // reserve approx. taskbar height
+  };
+}
+
+/** Hide the menu and release the open request the cell is holding. Idempotent. */
+function hideTaskbarMenu(): void {
+  menuVisible = false;
+  menuHiddenAt = Date.now();
+  menuClickWatcher?.stop();
+  menuClickWatcher = null;
+  try {
+    menuWin?.hide();
+  } catch { /* window gone */ }
+  menuClosed?.();
+  menuClosed = null;
+}
+
+/**
+ * Show the cell's context menu, resolving only once it closes.
+ *
+ * The cell page awaits this RPC and refetches when it resolves: nothing pushes to a
+ * page here, so a "switch view" pick would otherwise not reach the cell until its next
+ * 10s poll. Holding the request open is how pickScreenColor already does this.
+ *
+ * Unlike the panel, the window is shown and hidden rather than slid, so Deno's own
+ * position tracking stays accurate and setPosition keeps working (no snapWindow), and
+ * it is topmost: it floats in the gap above the taskbar instead of tucking behind it,
+ * and — opened from a noActivate cell — it never holds OS focus, so without topmost it
+ * would sit under whatever window is active.
+ */
+async function openTaskbarMenu(): Promise<void> {
+  if (menuVisible) {
+    hideTaskbarMenu(); // toggle back off — though the watcher below usually beats us to it
+    return;
+  }
+  // The outside-click watcher already dismissed the menu on the press that produced
+  // this very right-click — don't let one gesture close and reopen it.
+  if (Date.now() - menuHiddenAt < 250) return;
+
+  const { x, y } = await menuPos();
+  if (!menuWin || menuWin.isClosed()) {
+    menuWin = new Deno.BrowserWindow({
+      title: MENU_TITLE,
+      width: MENU_W,
+      height: MENU_H,
+      x,
+      y,
+      resizable: false,
+      frameless: true, // ignored by CEF; stripChrome below is the real mechanism
+      alwaysOnTop: true,
+    });
+    menuWin.navigate(`${base}/menu`);
+    menuWin.setTitle(MENU_TITLE); // force the native title so the Win32 helpers can find it
+    stripChrome(MENU_TITLE); // async fire-and-forget; retries until the window exists
+    enableGlass(MENU_TITLE, PANEL_GLASS); // same glass sheet as the panel
+    enableShadow(MENU_TITLE);
+    menuWin.addEventListener("blur", () => {
+      if (menuVisible) hideTaskbarMenu();
+    });
+    menuWin.addEventListener("close", () => {
+      menuWin = null;
+      hideTaskbarMenu();
+    });
+  } else {
+    // Reused (like the panel, so no taskbar button flashes on every open) — re-anchor
+    // before showing: the cell may have changed sides, and the taskbar's own geometry
+    // shifts as the tray grows.
+    try {
+      menuWin.setPosition(x, y);
+    } catch { /* recreated on the next open */ }
+  }
+  menuWin.show();
+  menuVisible = true;
+  // The menu can't hold OS focus, so its native `blur` may never fire — watch for a
+  // click anywhere outside it instead, exactly as the panel does.
+  menuClickWatcher?.stop();
+  menuClickWatcher = watchOutsideClick(MENU_TITLE, () => {
+    if (menuVisible) hideTaskbarMenu();
+  });
+  return new Promise<void>((resolve) => {
+    menuClosed = resolve;
   });
 }
 
@@ -388,10 +508,22 @@ registerApi({
       leadMs: nextLeadMs(s),
       taskbarView: store.settings.taskbar.primaryView,
       taskbarPos: store.settings.taskbar.position,
+      taskbarColor: store.settings.taskbar.color,
     };
   },
   togglePanel: () => togglePanel(),
   openSettings: () => openSettings(),
+  // The cell's context menu. `openTaskbarMenu` deliberately resolves late — see it.
+  openTaskbarMenu: () => openTaskbarMenu(),
+  closeTaskbarMenu: () => hideTaskbarMenu(),
+  // Flip which waqt the cell shows at rest. Narrower than saveSettings on purpose:
+  // nothing here needs a scheduler rebuild or a re-anchor, only the stored view.
+  setTaskbarView: (view: "next" | "current") => {
+    store.save({ taskbar: { ...store.settings.taskbar, primaryView: view } });
+    return true;
+  },
+  // Same exit as the tray's Quit; the cell's menu offers it too.
+  quit: () => quitApp(),
   // The panel page reports its natural content height so the window fits it exactly
   // (no clipped footer, no empty band) and adapts to the taller Bangla layout.
   setPanelHeight: async (h: number) => {
@@ -410,7 +542,10 @@ registerApi({
       try {
         panelWin.setSize(PANEL_W, panelH);
         const { x, hiddenY } = await panelPos();
-        snapWindow(PANEL_TITLE, x, hiddenY - panelSlideDy());
+        // snapWindow (not setSize above) is what actually resizes a window our native
+        // slides have moved — pass the size or the sheet keeps its old height at the
+        // new rest position and eats into the taskbar gap.
+        snapWindow(PANEL_TITLE, x, hiddenY - panelSlideDy(), PANEL_W, panelH);
       } catch { /* ignore */ }
     }
     return true;
@@ -441,6 +576,13 @@ registerApi({
       return null;
     }
   },
+  // Eyedropper for the taskbar-cell color. `pickScreenColor` holds its HTTP request
+  // open until the user confirms or cancels, so the page just awaits it; meanwhile the
+  // page polls `probeScreenColor` to render a live swatch of the pixel under the
+  // cursor (it can't read screen pixels itself).
+  pickScreenColor: () => pickScreenColor(),
+  probeScreenColor: () => probeColor(),
+  cancelScreenPick: () => cancelScreenPick(),
   testNotification: () => toast(t("notify.testTitle"), t("notify.testBody")),
   testLock: (seconds: number = 30) => runTestLock(Math.min(120, Math.max(5, seconds)) * 1000),
 });
@@ -453,6 +595,15 @@ async function runTestLock(ms: number): Promise<void> {
 }
 
 // ---------- tray ----------
+/** Release everything and exit. Reached from the tray menu and from the cell's context menu. */
+async function quitApp(): Promise<void> {
+  lock.release();
+  scheduler.stop();
+  tray.destroy();
+  await store.flush();
+  Deno.exit(0);
+}
+
 const tray = new TrayController({
   openSettings,
   isPaused: () => scheduler.pausedToday,
@@ -465,13 +616,7 @@ const tray = new TrayController({
     updateTray();
   },
   testLock: () => runTestLock(30_000),
-  quit: async () => {
-    lock.release();
-    scheduler.stop();
-    tray.destroy();
-    await store.flush();
-    Deno.exit(0);
-  },
+  quit: quitApp,
   devMode: true, // "Test lock (30s)" is useful in production too — keep it
   togglePanel: () => togglePanel(),
 });

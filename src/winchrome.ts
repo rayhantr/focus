@@ -9,10 +9,17 @@
  * - `lockdownWindows` pins one window per monitor to exact PHYSICAL monitor bounds
  *   as TOPMOST (BrowserWindow coordinates are logical/DPI-scaled; lock coverage needs
  *   physical) — it runs under a PER_MONITOR_AWARE_V2 thread context (see win32.ts).
- * - `attachTaskbarCell` makes the taskbar cell an OWNED window of Shell_TrayWnd
- *   (GWLP_HWNDPARENT): Windows keeps owned windows above their owner, so a taskbar
- *   click can never raise the taskbar over the cell. The cell stays top-level —
- *   cross-process SetParent (WS_CHILD) breaks CEF's compositor (verified).
+ * - `attachTaskbarCell` pins the cell over the taskbar as a TOPMOST tool window, and
+ *   the 60s placement pass re-asserts that topmost each time (which is what actually
+ *   keeps it above the Win11 taskbar, since the taskbar re-asserts itself too).
+ *   It does NOT make the cell an owned window of Shell_TrayWnd: that trick — long
+ *   claimed here as the mechanism — is impossible cross-process. Measured 2026-07-14
+ *   in an isolated experiment: SetWindowLongPtrW(GWLP_HWNDPARENT) with an owner in
+ *   ANOTHER process SILENTLY fails (returns 0, sets no last-error, GetWindow(GW_OWNER)
+ *   stays 0), while the identical call with a same-process owner succeeds. The live
+ *   cell confirmed it: GW_OWNER read 0 right after a "successful" attach. So do not
+ *   re-add it, and do not rely on owner-based z-order here. The cell stays top-level
+ *   either way — cross-process SetParent (WS_CHILD) breaks CEF's compositor (verified).
  * - `slideWindow` animates the whole OS window via raw SetWindowPos frames, which
  *   move the real window independent of CEF's paint loop, so it animates even while
  *   the window is unfocused (a JS-side BrowserWindow.setPosition burst gets coalesced
@@ -36,11 +43,9 @@ import {
   getWindowRect,
   GWL_EXSTYLE,
   GWL_STYLE,
-  GWLP_HWNDPARENT,
   HWND_TOP,
   HWND_TOPMOST,
   isKeyDown,
-  ptrToBigInt,
   setAcrylic,
   setLong,
   setWindowPos,
@@ -48,6 +53,7 @@ import {
   taskbarContentLeft,
   withPMv2,
 } from "./win32.ts";
+import type { TaskbarPosition } from "./types.ts";
 
 // Window styles cleared to make a CEF window borderless (caption/thickframe/sysmenu/
 // min/max box), plus the extended-style bits used to keep popovers off the taskbar.
@@ -110,7 +116,7 @@ function hideFromTaskbar(h: Deno.PointerValue): void {
 
 // --- core operations (run synchronously; DPI-sensitive ones are wrapped by callers) ---
 
-function attachCore(target: string, logicalW: number, position: "left" | "right"): number {
+function attachCore(target: string, logicalW: number, position: TaskbarPosition): number {
   const tb = findWindow("Shell_TrayWnd", null);
   if (tb === null) return 0;
   const cells = findByTitle(target);
@@ -122,7 +128,9 @@ function attachCore(target: string, logicalW: number, position: "left" | "right"
   const w = Math.round(logicalW * scale);
   const gap = Math.round(4 * scale);
   let x: number;
-  if (position === "left") {
+  if (position === "corner") {
+    x = tr.L; // flush in the taskbar's leftmost corner
+  } else if (position === "left") {
     // Sit just left of the centered Start/apps cluster (Win11 centers them), so the
     // cell hugs Start instead of stranding itself in the empty far-left corner — and
     // stays clear of an optional far-left Widgets/weather button, which is further
@@ -143,7 +151,8 @@ function attachCore(target: string, logicalW: number, position: "left" | "right"
   const style = getLong(cell, GWL_STYLE);
   setLong(cell, GWL_STYLE, (style & ~CHROME_BITS & ~WS_CHILD) | WS_VISIBLE);
   hideFromTaskbar(cell);
-  setLong(cell, GWLP_HWNDPARENT, ptrToBigInt(tb)); // owner = taskbar
+  // (No owner assignment here — a cross-process owner silently no-ops; see the file
+  // header. Topmost, re-asserted by each placement pass, is what holds the cell up.)
   // Start 1px below the taskbar top and shrink height by 1px so the taskbar's own
   // top border line stays visible behind the cell instead of being covered.
   setWindowPos(cell, HWND_TOPMOST, x, tr.T + 1, w, tr.B - tr.T - 1, SWP_SHOW_TOPMOST);
@@ -189,15 +198,14 @@ function lockdownCore(target: string): number {
 // --- exported API (signatures unchanged from the PowerShell-hosted version) ---
 
 /**
- * Own the taskbar cell (titled exactly `title`) to Shell_TrayWnd and pin it over
- * the taskbar, `logicalW` logical px wide. `position` picks the side: "right" (left
- * of the tray/clock, the default) or "left" (the taskbar's left edge, past Start).
+ * Pin the taskbar cell (titled exactly `title`) over the taskbar as a topmost tool
+ * window, `logicalW` logical px wide. `position` picks the spot — see TaskbarPosition.
  * Returns 1 on success, 0 when the cell or taskbar can't be found.
  */
 export async function attachTaskbarCell(
   title: string,
   logicalW: number,
-  position: "left" | "right" = "right",
+  position: TaskbarPosition = "right",
   timeoutMs = 15_000,
 ): Promise<number> {
   if (!ffiOk) return 0;
@@ -253,14 +261,29 @@ export async function slideWindow(title: string, logicalDeltaY: number, ms: numb
 /**
  * Force the window titled exactly `title` to an ABSOLUTE position (logical px,
  * converted to physical for the primary monitor at origin 0,0 — the same space the
- * panel's positions are computed in). Used to anchor the panel's hidden start
- * position before each open: a REUSED window's rest position otherwise creeps a
- * little lower every open/close cycle, because Deno's setPosition no-ops on a window
- * our native slides have already moved (so it never actually resets). No-ops when the
- * window isn't up yet (first open — creation already positioned it). Physical px,
- * PER_MONITOR_AWARE_V2.
+ * panel's positions are computed in), resizing it to `logicalW`×`logicalH` when both
+ * are given. Used to anchor the panel's hidden start position before each open: a
+ * REUSED window's rest position otherwise creeps a little lower every open/close
+ * cycle, because Deno's setPosition no-ops on a window our native slides have already
+ * moved (so it never actually resets).
+ *
+ * ALWAYS pass the size when the caller has an intended one. Deno's setSize no-ops on a
+ * reused window for the same reason setPosition does, so the native layer is the only
+ * thing that can actually resize it — and without a size here this re-applies the
+ * window's CURRENT (stale) height, which pins the real height apart from the `panelH`
+ * the rest position was computed from. The sheet's bottom then drifts off the taskbar
+ * gap by exactly that difference, and overlaps the taskbar once it shrinks.
+ *
+ * No-ops when the window isn't up yet (first open — creation already positioned and
+ * sized it). Physical px, PER_MONITOR_AWARE_V2.
  */
-export function snapWindow(title: string, logicalX: number, logicalY: number): number {
+export function snapWindow(
+  title: string,
+  logicalX: number,
+  logicalY: number,
+  logicalW?: number,
+  logicalH?: number,
+): number {
   if (!ffiOk) return 0;
   try {
     const wins = findByTitle(title);
@@ -274,8 +297,8 @@ export function snapWindow(title: string, logicalX: number, logicalY: number): n
         HWND_TOP,
         Math.round(logicalX * scale),
         Math.round(logicalY * scale),
-        rect.R - rect.L,
-        rect.B - rect.T,
+        logicalW === undefined ? rect.R - rect.L : Math.round(logicalW * scale),
+        logicalH === undefined ? rect.B - rect.T : Math.round(logicalH * scale),
         SWP_MOVE_NOZ,
       );
     });

@@ -4,11 +4,11 @@ import "../shared/global.css";
 import "./taskbar.css";
 import { rpc } from "../shared/rpc.ts";
 import { fmtDur, fmtTime, type Lang, makeT } from "../shared/format.ts";
-import type { WaqtState } from "../../src/types.ts";
+import type { TaskbarPosition, WaqtState } from "../../src/types.ts";
 
 // This cell is a native taskbar widget, not a browsable page — suppress
 // Chromium's default right-click menu (Back/Reload/Inspect) so a right-click
-// reads as native (and can later host our own menu if wanted).
+// reads as native. The cell opens our own menu instead (see `openMenu`).
 globalThis.addEventListener("contextmenu", (e) => e.preventDefault());
 
 interface Boot {
@@ -17,7 +17,8 @@ interface Boot {
   lang: Lang;
   leadMs: number;
   taskbarView: "next" | "current";
-  taskbarPos: "left" | "right";
+  taskbarPos: TaskbarPosition;
+  taskbarColor: string | null;
 }
 
 /** One stacked face of the cell (two right-aligned lines + an accent tone). */
@@ -73,16 +74,33 @@ function App() {
   }, [now, boot, refresh]);
 
   if (!boot) return null;
-  const { state, strings, lang, leadMs, taskbarView, taskbarPos } = boot;
+  const { state, strings, lang, leadMs, taskbarView, taskbarPos, taskbarColor } = boot;
   const t = makeT(strings, lang);
   const P = (name: string) => t(`prayer.${name}`);
 
   const open = () => rpc("togglePanel").catch(() => {});
-  // `static` (single face) suppresses the hover flip so the lone face never
-  // slides out to leave the cell blank. `left` aligns the text LTR when the cell
-  // sits on the taskbar's left side (default is right-aligned, like the clock).
+  // Right-click opens the cell's context menu, which the backend owns as its own window
+  // (nothing this size could host a menu). The RPC resolves only once that menu closes,
+  // which is the cue to refetch: a view switched from the menu would otherwise not show
+  // here until the next 10s poll.
+  const openMenu = async () => {
+    await rpc("openTaskbarMenu").catch(() => {});
+    refresh();
+  };
+  // `static` (single face) suppresses the hover flip so the lone face never slides
+  // out to leave the cell blank. `ltr` left-aligns the text for either left-hand
+  // position (the default right position stays right-aligned, like the clock).
+  // A configured color paints the cell background; null leaves it transparent so the
+  // real taskbar shows through (the default). Set inline rather than via a class so
+  // any color works; CSS keeps the hover tint as a separate layer over it.
   const cell = (faces: Face[]) => (
-    <button id="cell" class={`${faces.length > 1 ? "" : "static"}${taskbarPos === "left" ? " left" : ""}`} onClick={open}>
+    <button
+      id="cell"
+      class={`${faces.length > 1 ? "" : "static"}${taskbarPos !== "right" ? " ltr" : ""}`}
+      style={{ backgroundColor: taskbarColor ?? "transparent" }}
+      onClick={open}
+      onContextMenu={openMenu}
+    >
       {faces.map((f, i) => (
         <div key={i} class={`face ${i === 0 ? "front" : "back"} ${f.tone}`}>
           <div class="l1">{f.l1}</div>

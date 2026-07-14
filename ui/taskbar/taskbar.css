@@ -1,9 +1,10 @@
 /* Sits over the Windows 11 taskbar as an owned Shell_TrayWnd window. The
-   background is fully transparent so the real taskbar (Mica) shows through and
-   the cell blends seamlessly — no fixed color to mismatch the taskbar's tone.
+   background is transparent by default so the real taskbar (Mica) shows through
+   and the cell blends seamlessly — no fixed color to mismatch the taskbar's tone.
    The laufey/CEF window composites the transparent pixels against whatever is
    behind (the taskbar), so only the text renders. Square, borderless, two
-   right-aligned lines like the system clock.
+   right-aligned lines like the system clock. (A settings color, when set, paints
+   background-color inline over this — see main.tsx.)
 
    Unlike the rest of the app (Anek Bangla), the cell uses the Windows system
    font so it reads as native taskbar text — the same face the clock renders in.
@@ -21,9 +22,14 @@ html, body {
   font-size: 12px; /* same font + size as the Win11 system clock */
   line-height: 1.25;
   user-select: none;
-  background: transparent;
+  background-color: transparent;
 }
-#cell:hover { background: rgba(255, 255, 255, 0.08); }
+/* Hover tint as a background-IMAGE layer, not a background-color: it then composites
+   over whatever background-color the cell has (transparent or a configured color)
+   instead of replacing it, which a color override would otherwise defeat. */
+#cell:hover {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08));
+}
 
 /* Two faces stacked in the same box. The front rests in view; the back waits
    just below. On hover the pair slides up one cell-height, swapping them —
@@ -40,9 +46,9 @@ html, body {
   text-align: right;
   transition: transform 200ms ease, opacity 200ms ease;
 }
-/* Left-positioned cell: align both lines to the left (LTR) instead of the
-   clock-style right alignment. */
-#cell.left .face { align-items: flex-start; text-align: left; }
+/* Cell on either left-hand position: align both lines to the left (LTR) instead
+   of the clock-style right alignment. */
+#cell.ltr .face { align-items: flex-start; text-align: left; }
 
 .face.front { transform: translateY(0); opacity: 1; }
 .face.back { transform: translateY(100%); opacity: 0; }

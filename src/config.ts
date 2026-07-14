@@ -27,7 +27,7 @@ export const DEFAULTS: Settings = {
   },
   bypassApps: ["discord", "slack", "zoom", "teams"],
   autostart: false,
-  taskbar: { primaryView: "next", position: "right" },
+  taskbar: { primaryView: "next", position: "right", color: null },
 };
 
 function deepMerge<T>(base: T, patch: unknown): T {

@@ -1,0 +1,57 @@
+/* The taskbar cell's context menu: the same glass sheet as the panel — real OS
+   acrylic blur-behind (enableGlass in src/winchrome.ts) with these translucent
+   gradients as tint on top, and DWM's own drop shadow (enableShadow) around the
+   borderless window. Square, no borders; the two groups are told apart by the gap
+   between them, not by rules.
+
+   Every row is a FIXED height, which is what lets main.ts size the window up front
+   instead of running the panel's measure-and-report round-trip: the height can't
+   drift with font metrics or the taller Bangla text, since a 30px row has room for
+   either at 13px. The numbers here are mirrored by MENU_H in main.ts — change both. */
+html { background: rgba(9, 14, 11, 0.5); } /* translucent — guards the load flash without blocking the acrylic blur behind it */
+#app {
+  height: 100vh;
+  padding: 6px 0;
+  overflow: hidden;
+  user-select: none;
+  background:
+    radial-gradient(130% 90% at 85% -10%, rgba(53, 196, 113, 0.14), transparent 60%),
+    linear-gradient(160deg, rgba(22, 36, 28, 0.55), rgba(10, 17, 12, 0.62));
+  backdrop-filter: blur(28px) saturate(140%);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+}
+.row:hover { background: rgba(255, 255, 255, 0.08); }
+/* Reserved on every row, ticked or not, so all the labels line up. */
+.tick {
+  flex: none;
+  width: 12px;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+/* Separates the groups by empty space — the app draws no rules anywhere. */
+.gap { height: 11px; }

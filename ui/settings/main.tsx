@@ -1,10 +1,10 @@
-import { render } from "preact";
+import { type ComponentChildren, render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import "../shared/global.css";
 import "./settings.css";
 import { rpc } from "../shared/rpc.ts";
 import { makeT } from "../shared/format.ts";
-import type { CalcMethodId, LocationFix, LockRule, PrayerName, Settings } from "../../src/types.ts";
+import type { CalcMethodId, LocationFix, LockRule, PrayerName, Settings, TaskbarPosition } from "../../src/types.ts";
 
 const PRAYERS: PrayerName[] = ["fajr", "dhuhr", "asr", "maghrib", "isha"];
 
@@ -14,12 +14,25 @@ interface Boot {
   methods: CalcMethodId[];
 }
 
+/**
+ * Accepts "#rrggbb", "#rgb", and either without the "#", in any case. Returns the
+ * canonical "#rrggbb", or null for blank/unparseable input — null being exactly the
+ * stored value for "transparent", so a cleared field reads as "back to default".
+ */
+function normalizeHex(raw: string): string | null {
+  const s = raw.trim().replace(/^#/, "");
+  const full = s.length === 3 ? s.split("").map((c) => c + c).join("") : s;
+  return /^[0-9a-f]{6}$/i.test(full) ? `#${full.toLowerCase()}` : null;
+}
+
 /** Editable form model (bypassApps as textarea text). */
 interface Form {
   language: "en" | "bn";
   autostart: boolean;
   taskbarView: "next" | "current";
-  taskbarPosition: "left" | "right";
+  taskbarPosition: TaskbarPosition;
+  /** Raw hex text as typed; "" = transparent. Canonicalized on save (normalizeHex). */
+  taskbarColor: string;
   location: Settings["location"];
   calculation: Settings["calculation"];
   leadMinutes: number;
@@ -34,6 +47,7 @@ function toForm(s: Settings): Form {
     autostart: s.autostart,
     taskbarView: s.taskbar.primaryView,
     taskbarPosition: s.taskbar.position,
+    taskbarColor: s.taskbar.color ?? "",
     location: { ...s.location },
     calculation: { ...s.calculation },
     leadMinutes: s.notify.leadMinutes,
@@ -52,7 +66,13 @@ function toPatch(f: Form, _s: Settings): Partial<Settings> {
   return {
     language: f.language,
     autostart: f.autostart,
-    taskbar: { primaryView: f.taskbarView, position: f.taskbarPosition },
+    taskbar: {
+      primaryView: f.taskbarView,
+      position: f.taskbarPosition,
+      // Unparseable text saves as null (transparent) rather than blocking the whole
+      // form; refresh() then rewrites the field, so the reset is visible, not silent.
+      color: normalizeHex(f.taskbarColor),
+    },
     location: { ...f.location, lat: Number(f.location.lat), lng: Number(f.location.lng) },
     calculation: f.calculation,
     notify: { leadMinutes: Math.max(0, Number(f.leadMinutes) || 0), perPrayer },
@@ -66,6 +86,8 @@ function App() {
   const [form, setForm] = useState<Form | null>(null);
   const [saved, setSaved] = useState(false);
   const [detected, setDetected] = useState("");
+  const [picking, setPicking] = useState(false);
+  const [probe, setProbe] = useState<string | null>(null); // color under the cursor mid-pick
 
   const refresh = async () => {
     const b = await rpc<Boot>("getSettings");
@@ -117,13 +139,39 @@ function App() {
     }
   };
 
+  // The backend holds this request open until the pick is confirmed or cancelled, so
+  // awaiting it IS waiting for the user; the interval polls the pixel under the cursor
+  // meanwhile to drive the live preview. setForm takes an updater because this resolves
+  // long after the render that created the closure.
+  const pickColor = async () => {
+    if (picking) return;
+    setPicking(true);
+    setProbe(null);
+    const poll = setInterval(() => {
+      rpc<string | null>("probeScreenColor").then(setProbe).catch(() => {});
+    }, 60);
+    try {
+      const picked = await rpc<string | null>("pickScreenColor");
+      if (picked) setForm((f) => f && { ...f, taskbarColor: picked });
+    } catch { /* backend gone / FFI unavailable — keep whatever the field had */ } finally {
+      clearInterval(poll);
+      setPicking(false);
+      setProbe(null);
+    }
+  };
+
+  const colorHex = normalizeHex(form.taskbarColor);
+  const colorInvalid = form.taskbarColor.trim() !== "" && colorHex === null;
+  // Mid-pick the preview tracks the cursor, so the taskbar is previewed in place
+  // before committing to it; otherwise it shows what's actually in the field.
+  const previewColor = (picking ? probe ?? colorHex : colorHex) ?? "transparent";
+
   return (
     <>
       <h1>{t("settings.title")}</h1>
 
       <h2>{t("settings.general")}</h2>
-      <div class="row">
-        <label>{t("settings.language")}</label>
+      <Row label={t("settings.language")}>
         <select
           value={form.language}
           onChange={(e) => patch({ language: (e.target as HTMLSelectElement).value as "en" | "bn" })}
@@ -131,17 +179,15 @@ function App() {
           <option value="en">English</option>
           <option value="bn">বাংলা</option>
         </select>
-      </div>
-      <div class="row">
-        <label>{t("settings.autostart")}</label>
+      </Row>
+      <Row label={t("settings.autostart")}>
         <input
           type="checkbox"
           checked={form.autostart}
           onChange={(e) => patch({ autostart: (e.target as HTMLInputElement).checked })}
         />
-      </div>
-      <div class="row">
-        <label>{t("settings.taskbarView")}</label>
+      </Row>
+      <Row label={t("settings.taskbarView")} hint={t("settings.taskbarViewHint")}>
         <select
           value={form.taskbarView}
           onChange={(e) => patch({ taskbarView: (e.target as HTMLSelectElement).value as "next" | "current" })}
@@ -149,22 +195,44 @@ function App() {
           <option value="next">{t("settings.taskbarViewNext")}</option>
           <option value="current">{t("settings.taskbarViewCurrent")}</option>
         </select>
-      </div>
-      <div class="hint">{t("settings.taskbarViewHint")}</div>
-      <div class="row">
-        <label>{t("settings.taskbarPosition")}</label>
+      </Row>
+      <Row label={t("settings.taskbarPosition")} hint={t("settings.taskbarPositionHint")}>
         <select
           value={form.taskbarPosition}
-          onChange={(e) => patch({ taskbarPosition: (e.target as HTMLSelectElement).value as "left" | "right" })}
+          onChange={(e) => patch({ taskbarPosition: (e.target as HTMLSelectElement).value as TaskbarPosition })}
         >
           <option value="right">{t("settings.taskbarPositionRight")}</option>
           <option value="left">{t("settings.taskbarPositionLeft")}</option>
+          <option value="corner">{t("settings.taskbarPositionCorner")}</option>
         </select>
-      </div>
-      <div class="hint">{t("settings.taskbarPositionHint")}</div>
+      </Row>
+      <Row
+        label={t("settings.taskbarColor")}
+        hint={picking ? t("settings.taskbarColorPickHint") : t("settings.taskbarColorHint")}
+      >
+        {/* A miniature of the real cell rather than a plain swatch: the text is what
+            has to stay readable on the chosen background, so show text on it. */}
+        <div class="cellpreview">
+          <div class="fill" style={{ backgroundColor: previewColor }}>
+            <div class="p1">{P("fajr")} 5:12</div>
+            <div class="p2">{t("panel.startsIn", { t: "2h 14m" })}</div>
+          </div>
+        </div>
+        <input
+          type="text"
+          class="hex"
+          placeholder={t("settings.taskbarColorTransparent")}
+          value={form.taskbarColor}
+          onInput={(e) => patch({ taskbarColor: (e.target as HTMLInputElement).value })}
+        />
+        <button class="btn" onClick={pickColor} disabled={picking}>
+          {picking ? t("settings.taskbarColorPicking") : t("settings.taskbarColorPick")}
+        </button>
+        <button class="btn" onClick={() => patch({ taskbarColor: "" })}>{t("settings.taskbarColorClear")}</button>
+        {colorInvalid && <span class="hint warn" style="margin:0">{t("settings.taskbarColorInvalid")}</span>}
+      </Row>
       <h2>{t("settings.location")}</h2>
-      <div class="row">
-        <label>{t("settings.location")}</label>
+      <Row label={t("settings.location")}>
         <select
           value={form.location.mode}
           onChange={(e) =>
@@ -175,7 +243,7 @@ function App() {
         </select>
         <button class="btn" onClick={detectNow}>{t("settings.detectNow")}</button>
         <span class="hint" style="margin:0">{detected}</span>
-      </div>
+      </Row>
       <NumberRow
         label={t("settings.latitude")}
         value={form.location.lat}
@@ -188,16 +256,14 @@ function App() {
         step={0.0001}
         onInput={(v) => patch({ location: { ...form.location, lng: v } })}
       />
-      <div class="row">
-        <label>{t("settings.city")}</label>
+      <Row label={t("settings.city")}>
         <input
           type="text"
           value={form.location.city}
           onInput={(e) => patch({ location: { ...form.location, city: (e.target as HTMLInputElement).value } })}
         />
-      </div>
-      <div class="row">
-        <label>{t("settings.country")}</label>
+      </Row>
+      <Row label={t("settings.country")}>
         <input
           type="text"
           maxLength={2}
@@ -208,11 +274,10 @@ function App() {
               location: { ...form.location, countryCode: (e.target as HTMLInputElement).value.toUpperCase() },
             })}
         />
-      </div>
+      </Row>
 
       <h2>{t("settings.calculation")}</h2>
-      <div class="row">
-        <label>{t("settings.method")}</label>
+      <Row label={t("settings.method")}>
         <select
           value={form.calculation.method}
           onChange={(e) =>
@@ -226,9 +291,8 @@ function App() {
           <option value="auto">{t("settings.methodAuto")}</option>
           {boot.methods.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
-      </div>
-      <div class="row">
-        <label>{t("settings.madhab")}</label>
+      </Row>
+      <Row label={t("settings.madhab")}>
         <select
           value={form.calculation.madhab}
           onChange={(e) =>
@@ -239,7 +303,7 @@ function App() {
           <option value="shafi">{t("settings.madhabShafi")}</option>
           <option value="hanafi">{t("settings.madhabHanafi")}</option>
         </select>
-      </div>
+      </Row>
 
       <h2>{t("settings.notifications")}</h2>
       <NumberRow
@@ -274,11 +338,11 @@ function App() {
           </tr>
         </tbody>
       </table>
-      <div class="row">
+      <Row>
         <button class="btn" onClick={() => rpc("testNotification").catch(() => {})}>
           {t("settings.testNotification")}
         </button>
-      </div>
+      </Row>
 
       <h2>{t("settings.lock")}</h2>
       <div class="hint">{t("settings.lockExplain")}</div>
@@ -346,19 +410,43 @@ function App() {
   );
 }
 
-function NumberRow(
-  { label, value, step, onInput }: { label: string; value: number; step?: number; onInput: (v: number) => void },
+/**
+ * One inline setting: label (with its description beneath it) on the left, the
+ * controls on the right. Label-less rows (a bare button) still get the field
+ * column, so they align with the fields above them rather than the labels.
+ */
+function Row(
+  { label, hint, children }: { label?: string; hint?: string; children: ComponentChildren },
 ) {
   return (
     <div class="row">
-      <label>{label}</label>
+      <div class="rowlabel">
+        {label && <label>{label}</label>}
+        {hint && <div class="hint">{hint}</div>}
+      </div>
+      <div class="rowfield">{children}</div>
+    </div>
+  );
+}
+
+function NumberRow(
+  { label, hint, value, step, onInput }: {
+    label: string;
+    hint?: string;
+    value: number;
+    step?: number;
+    onInput: (v: number) => void;
+  },
+) {
+  return (
+    <Row label={label} hint={hint}>
       <input
         type="number"
         step={step}
         value={value}
         onInput={(e) => onInput(Number((e.target as HTMLInputElement).value))}
       />
-    </div>
+    </Row>
   );
 }
 

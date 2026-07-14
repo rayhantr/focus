@@ -9,7 +9,7 @@
 import { build, type InlineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-const PAGES = ["panel", "taskbar", "lock", "settings"];
+const PAGES = ["panel", "taskbar", "menu", "lock", "settings"];
 const watch = Deno.args.includes("--watch");
 
 function configFor(page: string): InlineConfig {

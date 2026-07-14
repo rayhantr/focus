@@ -76,12 +76,21 @@ const user32 = tryOpen("user32.dll", {
   EnumDisplayMonitors: { parameters: ["pointer", "pointer", "function", "isize"], result: "bool" },
   GetCursorPos: { parameters: ["buffer"], result: "bool" },
   GetAsyncKeyState: { parameters: ["i32"], result: "i16" },
+  GetWindowThreadProcessId: { parameters: ["pointer", "buffer"], result: "u32" },
   ShowWindow: { parameters: ["pointer", "i32"], result: "bool" },
+  GetDC: { parameters: ["pointer"], result: "pointer" },
+  ReleaseDC: { parameters: ["pointer", "pointer"], result: "i32" },
 }, "user32 (native chrome features)");
 
 const dwmapi = tryOpen("dwmapi.dll", {
   DwmExtendFrameIntoClientArea: { parameters: ["pointer", "buffer"], result: "i32" },
 }, "dwmapi (drop shadow)");
+
+// Reads single screen pixels for the settings eyedropper. Its own handle so a
+// missing gdi32 export only costs the eyedropper, not the window chrome.
+const gdi32 = tryOpen("gdi32.dll", {
+  GetPixel: { parameters: ["pointer", "i32", "i32"], result: "u32" },
+}, "gdi32 (screen color picking)");
 
 // The undocumented acrylic export lives in its own handle: if it can't be resolved
 // on some future Windows build, only the glass effect degrades — not everything.
@@ -157,10 +166,38 @@ export function findWindowEx(
   return user32.symbols.FindWindowExW(parent, after, cls === null ? null : wstr(cls), title === null ? null : wstr(title));
 }
 
+/** PID that created the window (0 if it can't be read). */
+export function getWindowPid(h: Deno.PointerValue): number {
+  if (!user32) return 0;
+  const buf = new Uint8Array(4);
+  user32.symbols.GetWindowThreadProcessId(h, buf);
+  return new DataView(buf.buffer).getUint32(0, true);
+}
+
 /**
- * All top-level windows whose title matches exactly. FindWindowExW with a null
+ * OUR top-level windows whose title matches exactly. FindWindowExW with a null
  * parent enumerates top-level windows; iterating with `after` walks every match
  * (used for the per-monitor lock windows, which share one title).
+ *
+ * Matches are filtered to this process, and that filter is load-bearing, not a
+ * tidiness measure: a title is NOT unique to us. Whenever one of our windows takes a
+ * taskbar button — which every freshly created CEF window briefly does, before we flip
+ * WS_EX_TOOLWINDOW — the shell creates its own `Windows.Internal.Shell.TabProxyWindow`
+ * for it, OWNED BY explorer.exe and titled with an exact copy of our window's title.
+ * Those proxies outlive the window they mirror (explorer keeps running across app
+ * restarts), and they enumerate BEFORE our real window (older = lower HWND), so an
+ * unfiltered `[0]` hands callers an explorer window.
+ *
+ * That is not a harmless miss: SetWindowPos works cross-process, so `attachTaskbarCell`
+ * happily moved explorer's proxy onto the taskbar and reported success, while the real
+ * cell stayed parked offscreen — the taskbar widget silently never appeared, and got
+ * less likely to appear the more times the app had been restarted. (The Set*Long calls
+ * fail silently cross-process, which is why only the move landed.) Diagnosed live:
+ * 3 windows titled "Prayer Focus Taskbar" — two explorer proxies, then our cell.
+ *
+ * `Deno.pid` is the right filter: the app's JS runs inside the CEF host process, which
+ * is the same process that creates the BrowserWindows (verified live — the RPC server
+ * and every `Chrome_WidgetWin_1` window share one PID).
  */
 export function findByTitle(title: string): Deno.PointerValue[] {
   if (!user32) return [];
@@ -171,7 +208,7 @@ export function findByTitle(title: string): Deno.PointerValue[] {
   for (let i = 0; i < 64; i++) {
     const h = user32.symbols.FindWindowExW(null, prev, null, t);
     if (h === null) break;
-    out.push(h);
+    if (getWindowPid(h) === Deno.pid) out.push(h);
     prev = h;
   }
   return out;
@@ -264,6 +301,36 @@ export function getCursorPos(): { x: number; y: number } {
   user32.symbols.GetCursorPos(buf);
   const dv = new DataView(buf.buffer);
   return { x: dv.getInt32(0, true), y: dv.getInt32(4, true) };
+}
+
+/**
+ * Color of one pixel of the composited desktop, or null if it can't be read.
+ *
+ * `x`/`y` are PHYSICAL virtual-screen coordinates — always, regardless of the calling
+ * thread's DPI awareness. Unlike GetWindowRect/GetCursorPos (which this module wraps
+ * in withPMv2/withUnaware precisely because they virtualize), the screen DC does NOT
+ * get DPI-virtualized by SetThreadDpiAwarenessContext. Probed on the live 125% desktop:
+ * under DPI_UNAWARE, (1056,1170) still returned the taskbar's color instead of the
+ * CLR_INVALID a virtualized 1536x960 DC would owe for y=1170, and (845,936) returned
+ * wallpaper rather than the taskbar that sits there in virtualized space. So pair this
+ * with a getCursorPos() read inside withPMv2 — a withUnaware cursor would name a
+ * different physical pixel and silently sample the wrong spot.
+ *
+ * The DC is acquired and released per call rather than cached: an eyedropper samples
+ * a few dozen times per session, so the cost is irrelevant next to leaking a screen
+ * DC (a process-wide GDI handle) if a pick is abandoned.
+ */
+export function getScreenPixel(x: number, y: number): { r: number; g: number; b: number } | null {
+  if (!user32 || !gdi32) return null;
+  const hdc = user32.symbols.GetDC(null); // null hWnd = the whole (virtual) screen
+  if (hdc === null) return null;
+  try {
+    const c = gdi32.symbols.GetPixel(hdc, x, y) >>> 0;
+    if (c === 0xffffffff) return null; // CLR_INVALID — point lies outside the DC's clip
+    return { r: c & 0xff, g: (c >> 8) & 0xff, b: (c >> 16) & 0xff }; // COLORREF is 0x00bbggrr
+  } finally {
+    user32.symbols.ReleaseDC(null, hdc);
+  }
 }
 
 /** True while the given virtual-key (e.g. 0x01 VK_LBUTTON) is physically down. */
